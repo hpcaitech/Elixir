@@ -20,7 +20,7 @@ class Registry(object):
         return self._registry_dict[name]
 
     def __iter__(self):
-        return iter(self._registry_dict)
+        return iter(self._registry_dict.items())
 
 
 TEST_MODELS = Registry()
