@@ -1,1 +1,1 @@
-from . import mlp, small
+from . import mlp, resnet, small
