@@ -1,17 +1,11 @@
 import contextlib
-from collections import defaultdict
-from typing import Dict, Iterator, NamedTuple
+from typing import Callable, Dict, Iterator, List, Tuple
 
 import torch
 import torch.nn as nn
-from torch.nn import Parameter
 from torch.utils._pytree import tree_map
 
-
-def normalize_tuple(x):
-    if not isinstance(x, tuple):
-        return (x,)
-    return x
+from elixir.tracer.utils import meta_copy
 
 
 @contextlib.contextmanager
@@ -23,13 +17,46 @@ def no_dispatch() -> Iterator[None]:
         del guard
 
 
-PARAM_INFO_DICT: Dict[int, str] = defaultdict(str)
+def normalize_tuple(x):
+    if not isinstance(x, tuple):
+        return (x,)
+    return x
 
 
-class MyTensor(torch.Tensor):
+class ATensor(torch.Tensor):
     elem: torch.Tensor
 
     __slots__ = ['elem']
+
+    data_ptr_dict: Dict[int, Tuple[str, nn.Parameter]] = None
+    order_list: List[Dict] = None
+
+    @staticmethod
+    def reset():
+        ATensor.data_ptr_dict = dict()
+        ATensor.order_list = list()
+
+    @staticmethod
+    def clear():
+        ATensor.data_ptr_dict = None
+        ATensor.order_list = None
+
+    @staticmethod
+    def add_data_ptr(name: str, param: nn.Parameter):
+        data_ptr = param.data_ptr()
+        if data_ptr not in ATensor.data_ptr_dict:
+            ATensor.data_ptr_dict[data_ptr] = (name, param)
+        else:
+            name_in, param_in = ATensor.data_ptr_dict[data_ptr]
+            assert name == name_in, 'Got two different parameters with the same name'
+            assert id(param_in) == id(param), 'Got two different parameters with the same data ptr'
+
+    @staticmethod
+    def get_param(data_ptr: int):
+        if data_ptr in ATensor.data_ptr_dict:
+            return ATensor.data_ptr_dict.get(data_ptr)
+        else:
+            return None, None
 
     @staticmethod
     def __new__(cls, elem, *args, **kwargs):
@@ -47,34 +74,28 @@ class MyTensor(torch.Tensor):
         return r
 
     def __repr__(self):
-        return f'MyTensor({self.elem})'
+        return f'ATensor({self.elem})'
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        print(f'{func}:')
 
-        def print_tensor(x):
-            if isinstance(x, Parameter) or type(x) is torch.Tensor:
-                grad_name = None
-                if x.grad_fn:
-                    grad_name = x.grad_fn
-                    print(x.grad_fn.next_functions[0][0])
-                print(id(x), x.shape, x.data_ptr(), type(x), grad_name)
+        step_dict = dict()
 
-        def print_param(x):
+        def record_param(x):
             if isinstance(x, torch.Tensor):
-                data_ptr = x.data_ptr()
-                if data_ptr in PARAM_INFO_DICT:
-                    print(f'Get Parameter `{PARAM_INFO_DICT[data_ptr]}`')
+                name, param = ATensor.get_param(x.data_ptr())
+                if name is not None:
+                    step_dict[name] = param
 
-        tree_map(print_param, args)
-        tree_map(print_param, kwargs)
+        tree_map(record_param, args)
+        if len(step_dict) > 0:
+            ATensor.order_list.append(step_dict)
 
         def unwrap(x):
-            return x.elem if isinstance(x, MyTensor) else x
+            return x.elem if isinstance(x, ATensor) else x
 
         def wrap(x):
-            return MyTensor(x) if isinstance(x, torch.Tensor) else x
+            return ATensor(x) if isinstance(x, torch.Tensor) else x
 
         with no_dispatch():
             res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
@@ -87,58 +108,17 @@ class MyTensor(torch.Tensor):
             return res
 
 
-def get_param_info(model: nn.Module):
+def generate_td_order(model: nn.Module, inp: torch.Tensor, step_fn: Callable):
+    ATensor.reset()
+
+    model = meta_copy(model)
     for name, param in model.named_parameters():
-        PARAM_INFO_DICT[param.data_ptr()] = name
+        ATensor.add_data_ptr(name, param)
 
+    inp = ATensor(inp.to('meta'))
+    step_fn(model, inp)
 
-def run_linear():
-    model = nn.Linear(4, 8)
-    for param in model.parameters():
-        param.to('meta')
-    get_param_info(model)
+    ret = ATensor.order_list
+    ATensor.clear()
 
-    inp = MyTensor(torch.randn(6, 4, device='meta', requires_grad=True))
-    model(inp).sum().backward()
-
-    torch.cuda.synchronize()
-    print('Done!')
-
-
-def run_resnet():
-    import torchvision.models as models
-    model = models.resnet18().cuda()
-    get_param_info(model)
-
-    inp = MyTensor(torch.randn(1, 3, 224, 224, device='cuda', requires_grad=True))
-    model(inp).sum().backward()
-
-    torch.cuda.synchronize()
-    print('Done!')
-
-
-def run_bert():
-    from transformers import BertConfig, BertForSequenceClassification
-    config = BertConfig(vocab_size=16,
-                        gradient_checkpointing=True,
-                        hidden_size=8,
-                        intermediate_size=8 * 4,
-                        num_attention_heads=2,
-                        max_position_embeddings=8,
-                        num_hidden_layers=2,
-                        hidden_dropout_prob=0.,
-                        attention_probs_dropout_prob=0.)
-    model = BertForSequenceClassification(config).cuda()
-    model.gradient_checkpointing_enable()
-    get_param_info(model)
-
-    data = torch.randint(low=0, high=8, size=(4, 8), device='cuda', dtype=torch.long)
-    data = MyTensor(data)
-    model(data)[0].sum().backward()
-
-    torch.cuda.synchronize()
-    print('Done!')
-
-
-if __name__ == '__main__':
-    run_bert()
+    return ret
