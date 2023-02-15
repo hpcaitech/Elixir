@@ -11,7 +11,7 @@ def generate_fx_order(model: nn.Module) -> List[Dict[str, nn.Parameter]]:
     fxf_name_mark = '_fxf_name'
     fxf_param_mark = '_fxf_param'
 
-    meta_model = meta_copy(model)
+    meta_model = meta_copy(model, lambda p: nn.Parameter(p.data.to('meta')))
 
     # attach names for parameters
     for name, param in meta_model.named_parameters():
@@ -40,7 +40,7 @@ def generate_fx_order(model: nn.Module) -> List[Dict[str, nn.Parameter]]:
                 if maybe_param is not None:
                     param_name = getattr(maybe_param, fxf_name_mark)
                     step_dict[param_name] = maybe_param
-        elif node.op == 'call_function':
+        elif node.op in ('call_function', 'call_method'):
             step_dict = dict()
             for pre in node.args:
                 if hasattr(pre, fxf_param_mark):

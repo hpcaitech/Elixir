@@ -38,21 +38,27 @@ def _get_shallow_copy_model(model: nn.Module):
     return old_to_new[model]
 
 
-def meta_copy(model: nn.Module):
+def meta_copy(model: nn.Module, meta_fn: callable):
     new_model = _get_shallow_copy_model(model)
+    old_parameters = dict()
 
     for (_, old_module), (_, new_module) in \
         zip(_get_dfs_module_list(model), _get_dfs_module_list(new_model)):
 
         new_module._parameters = OrderedDict()
-        for name, param in old_module.named_parameters(recurse=False):
+        for name, param in old_module._parameters.items():
             new_param = None
             if param is not None:
-                new_param = nn.Parameter(param.data.to('meta'))
+                param_id = id(param)
+                if param_id in old_parameters:
+                    new_param = old_parameters.get(param_id)
+                else:
+                    new_param = meta_fn(param)
+                    old_parameters[param_id] = new_param
             setattr(new_module, name, new_param)
 
         new_module._buffers = OrderedDict()
-        for name, buffer in old_module.named_buffers(recurse=False):
+        for name, buffer in old_module._buffers.items():
             new_buffer = None
             if buffer is not None:
                 new_buffer = buffer.to('meta')

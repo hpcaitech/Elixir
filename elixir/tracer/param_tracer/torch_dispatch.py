@@ -1,10 +1,12 @@
 import contextlib
+import uuid
 from typing import Callable, Dict, Iterator, List, Tuple
 
 import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
+from elixir.tracer.ops import SameStorageAten
 from elixir.tracer.utils import meta_copy
 
 
@@ -21,6 +23,14 @@ def normalize_tuple(x):
     if not isinstance(x, tuple):
         return (x,)
     return x
+
+
+def register_storage(x):
+    assert isinstance(x, nn.Parameter)
+    assert x.data_ptr() == 0
+
+    data_ptr = uuid.uuid1()
+    x.data_ptr = lambda: data_ptr
 
 
 class ATensor(torch.Tensor):
@@ -48,8 +58,8 @@ class ATensor(torch.Tensor):
             ATensor.data_ptr_dict[data_ptr] = (name, param)
         else:
             name_in, param_in = ATensor.data_ptr_dict[data_ptr]
-            assert name == name_in, 'Got two different parameters with the same name'
-            assert id(param_in) == id(param), 'Got two different parameters with the same data ptr'
+            if name != name_in or id(param) != id(param_in):
+                raise RuntimeError('Got two different parameters with the same data ptr')
 
     @staticmethod
     def get_param(data_ptr: int):
@@ -78,7 +88,6 @@ class ATensor(torch.Tensor):
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-
         step_dict = dict()
 
         def record_param(x):
@@ -87,9 +96,16 @@ class ATensor(torch.Tensor):
                 if name is not None:
                     step_dict[name] = param
 
+        def debug_tensor(x):
+            if isinstance(x, torch.Tensor):
+                print(type(x), x.shape, x.data_ptr(), id(x))
+                if x.grad_fn:
+                    print(x.grad_fn)
+
         tree_map(record_param, args)
         if len(step_dict) > 0:
             ATensor.order_list.append(step_dict)
+        del step_dict
 
         def unwrap(x):
             return x.elem if isinstance(x, ATensor) else x
@@ -102,6 +118,11 @@ class ATensor(torch.Tensor):
         outs = normalize_tuple(res)
         res = tree_map(wrap, outs)
 
+        if func in SameStorageAten:
+            for x in res:
+                if isinstance(x, torch.Tensor):
+                    x.data_ptr = args[0].data_ptr
+
         if len(res) == 1:
             return res[0]
         else:
@@ -111,8 +132,9 @@ class ATensor(torch.Tensor):
 def generate_td_order(model: nn.Module, inp: torch.Tensor, step_fn: Callable):
     ATensor.reset()
 
-    model = meta_copy(model)
+    model = meta_copy(model, lambda p: nn.Parameter(ATensor(p.data.to('meta'))))
     for name, param in model.named_parameters():
+        register_storage(param)
         ATensor.add_data_ptr(name, param)
 
     inp = ATensor(inp.to('meta'))
