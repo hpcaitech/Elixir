@@ -1,27 +1,68 @@
-def main():
-    model = resnet18()
+from typing import Callable, Tuple, Union
 
+import torch
+import torch.nn as nn
+from torch.utils._pytree import tree_map
+
+from elixir.tracer.utils import meta_copy
+
+from .memory_tensor import MTensor
+
+
+def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn: Callable, dtype=torch.float):
+
+    print(f'You are profiling cuda memory with dtype `{dtype}`')
+
+    def tensor_trans(t):
+        meta_t = t.data.to('meta')
+        if isinstance(t, nn.Parameter):
+            meta_t = nn.Parameter(meta_t.to(dtype))
+        return meta_t
+
+    model = meta_copy(model, tensor_trans)
+
+    param_occ = 0
     max_numel = 0
     for name, param in model.named_parameters():
+        assert param.dtype is dtype
+        param_occ += param.numel() * param.element_size()
         max_numel = max(max_numel, param.numel())
 
-    print(max_numel)
-
+    buffer_occ = 0
     for name, buffer in model.named_buffers():
-        buffer.data = buffer.data.cuda()
+        buffer_occ += buffer.numel() * buffer.element_size()
 
-    pool = torch.empty((max_numel,), device='cuda', dtype=torch.float)
-    for name, param in model.named_parameters():
-        fake_data = pool[:param.numel()].view(param.shape)
-        param.data = fake_data
-        # print(name, param.shape, param.device)
+    # get the initial cuda memory allocation for sanity check
+    init_cuda_alc = torch.cuda.memory_allocated()
 
-    pre_max_cuda_memory = torch.cuda.memory_allocated()
-    print(_format_memory(pre_max_cuda_memory))
-    inp = torch.randn(4, 3, 32, 32, device='cuda')
-    model(inp).sum().backward()
+    pool = torch.empty(max_numel, dtype=dtype, device='cuda')
 
-    aft_max_cuda_memory = torch.cuda.max_memory_allocated()
-    print(_format_memory(aft_max_cuda_memory))
+    def tensor_to_cuda(t):
+        if isinstance(t, nn.Parameter):
+            fake_data = pool[:t.numel()].view(t.shape)
+            return nn.Parameter(fake_data)
+        else:
+            fake_data = torch.empty(t.shape, dtype=t.dtype, device='cuda')
+            return fake_data
 
-    print('activation space', aft_max_cuda_memory - pre_max_cuda_memory)
+    model = meta_copy(model, tensor_to_cuda)
+
+    # convert all input data to meta_tensor
+    if not isinstance(inp, tuple):
+        inp = (inp,)
+    inp = tree_map(lambda t: MTensor(t.data.to('cuda')), inp)
+
+    torch.cuda.reset_peak_memory_stats()
+    before_cuda_alc = torch.cuda.memory_allocated()
+    step_fn(model, inp)
+    after_cuda_alc = torch.cuda.max_memory_allocated()
+
+    activation_occ = after_cuda_alc - before_cuda_alc
+
+    del inp
+    del model
+    del pool
+    close_cuda_alc = torch.cuda.memory_allocated()
+    assert init_cuda_alc == close_cuda_alc
+
+    return dict(param_occ=param_occ, buffer_occ=buffer_occ, grad_occ=param_occ, activation_occ=activation_occ)

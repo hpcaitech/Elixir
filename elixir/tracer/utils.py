@@ -41,6 +41,7 @@ def _get_shallow_copy_model(model: nn.Module):
 def meta_copy(model: nn.Module, meta_fn: callable):
     new_model = _get_shallow_copy_model(model)
     old_parameters = dict()
+    old_buffers = dict()
 
     for (_, old_module), (_, new_module) in \
         zip(_get_dfs_module_list(model), _get_dfs_module_list(new_model)):
@@ -61,7 +62,12 @@ def meta_copy(model: nn.Module, meta_fn: callable):
         for name, buffer in old_module._buffers.items():
             new_buffer = None
             if buffer is not None:
-                new_buffer = buffer.to('meta')
+                buffer_id = id(buffer)
+                if buffer_id in old_buffers:
+                    new_buffer = old_buffers.get(buffer_id)
+                else:
+                    new_buffer = meta_fn(buffer)
+                    old_buffers[buffer_id] = new_buffer
             setattr(new_module, name, new_buffer)
 
     return new_model

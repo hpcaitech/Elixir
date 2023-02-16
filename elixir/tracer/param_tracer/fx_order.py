@@ -11,7 +11,13 @@ def generate_fx_order(model: nn.Module) -> List[Dict[str, nn.Parameter]]:
     fxf_name_mark = '_fxf_name'
     fxf_param_mark = '_fxf_param'
 
-    meta_model = meta_copy(model, lambda p: nn.Parameter(p.data.to('meta')))
+    def tensor_trans(t):
+        meta_t = t.data.to('meta')
+        if isinstance(t, nn.Parameter):
+            meta_t = nn.Parameter(meta_t)
+        return meta_t
+
+    meta_model = meta_copy(model, tensor_trans)
 
     # attach names for parameters
     for name, param in meta_model.named_parameters():

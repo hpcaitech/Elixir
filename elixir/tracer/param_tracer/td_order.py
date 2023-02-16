@@ -1,6 +1,6 @@
 import contextlib
 import uuid
-from typing import Callable, Dict, Iterator, List, Tuple
+from typing import Callable, Dict, Iterator, List, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -129,15 +129,25 @@ class ATensor(torch.Tensor):
             return res
 
 
-def generate_td_order(model: nn.Module, inp: torch.Tensor, step_fn: Callable):
+def generate_td_order(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn: Callable):
     ATensor.reset()
 
-    model = meta_copy(model, lambda p: nn.Parameter(ATensor(p.data.to('meta'))))
+    def tensor_trans(t):
+        meta_t = ATensor(t.data.to('meta'))
+        if isinstance(t, nn.Parameter):
+            meta_t = nn.Parameter(meta_t)
+        return meta_t
+
+    model = meta_copy(model, tensor_trans)
     for name, param in model.named_parameters():
         register_storage(param)
         ATensor.add_data_ptr(name, param)
 
-    inp = ATensor(inp.to('meta'))
+    # convert all input data to meta_tensor
+    if not isinstance(inp, tuple):
+        inp = (inp,)
+    inp = tree_map(lambda t: ATensor(t.data.to('meta')), inp)
+
     step_fn(model, inp)
 
     ret = ATensor.order_list

@@ -16,7 +16,7 @@ def test_td_forward():
     #     print(x)
 
     def foward_fn(model, inp):
-        model(inp).sum().backward()
+        model(*inp).sum().backward()
 
     td_forward_order = generate_td_order(model, data, foward_fn)
     for x in td_forward_order:
