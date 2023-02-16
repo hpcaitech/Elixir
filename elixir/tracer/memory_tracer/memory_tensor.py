@@ -4,6 +4,10 @@ from typing import Iterator
 import torch
 from torch.utils._pytree import tree_map
 
+from elixir.tracer.utils import get_cuda_allocated, get_cuda_max_allocated
+
+from .op_cache import fake_cuda_addmm, fake_cuda_mm
+
 aten = torch.ops.aten
 
 
@@ -22,37 +26,20 @@ def normalize_tuple(x):
     return x
 
 
-def check_cuda(t):
-    assert isinstance(t, torch.Tensor)
-    assert t.device.type == 'cuda'
-
-
-def fake_cuda_mm(ma, mb):
-    check_cuda(ma)
-    check_cuda(mb)
-
-    assert ma.dtype == mb.dtype
-    assert ma.ndim == 2
-    assert mb.ndim == 2
-
-    u, v = ma.shape
-    w, x = mb.shape
-
-    assert v == w
-
-    return torch.empty((u, x), dtype=ma.dtype, device='cuda')
-
-
-def fake_cuda_addmm(bias, ma, mb):
-    check_cuda(bias)
-    assert bias.dtype == ma.dtype
-    return fake_cuda_mm(ma, mb)
-
-
 class MTensor(torch.Tensor):
     elem: torch.Tensor
 
     __slots__ = ['elem']
+
+    peak_memory_allocated: int = 0
+
+    @staticmethod
+    def reset_peak_memory():
+        MTensor.peak_memory_allocated = 0
+
+    @staticmethod
+    def update_peak_memory(new_peak):
+        MTensor.peak_memory_allocated = max(MTensor.peak_memory_allocated, new_peak)
 
     @staticmethod
     def __new__(cls, elem, *args, **kwargs):
@@ -89,12 +76,23 @@ class MTensor(torch.Tensor):
             return MTensor(x) if isinstance(x, torch.Tensor) else x
 
         if func is aten.addmm.default:
-            res = fake_cuda_addmm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            # res = fake_cuda_addmm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            print('addmm pre', get_cuda_allocated(), get_cuda_max_allocated())
+            res, pre_max = fake_cuda_addmm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            MTensor.update_peak_memory(pre_max)
+            print('addmm aft', get_cuda_allocated(), get_cuda_max_allocated())
         elif func is aten.mm.default:
-            res = fake_cuda_mm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            # res = fake_cuda_mm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            print('mm pre', get_cuda_allocated())
+            res, pre_max = fake_cuda_mm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+            MTensor.update_peak_memory(pre_max)
+            print('mm aft', get_cuda_allocated())
         else:
             with no_dispatch():
                 res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+
+        # with no_dispatch():
+        #     res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
 
         outs = normalize_tuple(res)
         res = tree_map(wrap, outs)

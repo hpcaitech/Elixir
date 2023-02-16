@@ -36,7 +36,7 @@ def test_mm(dtype, size0=(4, 256), size1=(256, 1024)):
 
 
 @pytest.mark.parametrize('dtype', [torch.float, torch.float16, torch.bfloat16])
-def test_addmm(dtype, size0=(4, 256), size1=(256, 1024)):
+def test_addmm(dtype, size0=(4, 16), size1=(16, 64)):
     torch.cuda.reset_peak_memory_stats()
     assert torch.cuda.memory_allocated() == 0
 

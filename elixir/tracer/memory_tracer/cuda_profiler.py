@@ -1,10 +1,11 @@
+import gc
 from typing import Callable, Tuple, Union
 
 import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from elixir.tracer.utils import meta_copy
+from elixir.tracer.utils import get_cuda_allocated, get_cuda_max_allocated, meta_copy
 
 from .memory_tensor import MTensor
 
@@ -33,7 +34,7 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
         buffer_occ += buffer.numel() * buffer.element_size()
 
     # get the initial cuda memory allocation for sanity check
-    init_cuda_alc = torch.cuda.memory_allocated()
+    init_cuda_alc = get_cuda_allocated()
 
     pool = torch.empty(max_numel, dtype=dtype, device='cuda')
 
@@ -52,17 +53,25 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
         inp = (inp,)
     inp = tree_map(lambda t: MTensor(t.data.to('cuda')), inp)
 
-    torch.cuda.reset_peak_memory_stats()
-    before_cuda_alc = torch.cuda.memory_allocated()
-    step_fn(model, inp)
-    after_cuda_alc = torch.cuda.max_memory_allocated()
+    MTensor.reset_peak_memory()
+    before_cuda_alc = get_cuda_allocated()
+    torch.cuda.reset_max_memory_allocated()
 
+    step_fn(model, inp)
+
+    after_cuda_alc = max(get_cuda_max_allocated(), MTensor.peak_memory_allocated)
     activation_occ = after_cuda_alc - before_cuda_alc
 
     del inp
     del model
     del pool
-    close_cuda_alc = torch.cuda.memory_allocated()
+
+    close_cuda_alc = get_cuda_allocated()
     assert init_cuda_alc == close_cuda_alc
+
+    # from .op_cache import MM, ADDMM
+    # MM.print()
+    # ADDMM.print()
+    # exit(0)
 
     return dict(param_occ=param_occ, buffer_occ=buffer_occ, grad_occ=param_occ, activation_occ=activation_occ)

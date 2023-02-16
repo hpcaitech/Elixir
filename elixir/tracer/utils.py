@@ -2,6 +2,7 @@ from collections import OrderedDict
 from copy import copy
 from typing import Optional, Set
 
+import torch
 import torch.nn as nn
 
 
@@ -71,3 +72,13 @@ def meta_copy(model: nn.Module, meta_fn: callable):
             setattr(new_module, name, new_buffer)
 
     return new_model
+
+
+def get_cuda_allocated():
+    torch.cuda.synchronize()
+    return torch.cuda.memory_allocated()
+
+
+def get_cuda_max_allocated():
+    torch.cuda.synchronize()
+    return torch.cuda.max_memory_allocated()
