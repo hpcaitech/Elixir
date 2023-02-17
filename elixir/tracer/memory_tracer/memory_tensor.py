@@ -6,9 +6,11 @@ from torch.utils._pytree import tree_map
 
 from elixir.tracer.utils import get_cuda_allocated, get_cuda_max_allocated
 
-from .op_cache import fake_cuda_addmm, fake_cuda_mm
+from .op_cache import wrapped_mm_ops
 
 aten = torch.ops.aten
+
+mm_ops_list = [aten.mm.default, aten.addmm.default, aten.bmm.default, aten.addbmm.default, aten.baddbmm.default]
 
 
 @contextlib.contextmanager
@@ -75,24 +77,12 @@ class MTensor(torch.Tensor):
         def wrap(x):
             return MTensor(x) if isinstance(x, torch.Tensor) else x
 
-        if func is aten.addmm.default:
-            # res = fake_cuda_addmm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-            print('addmm pre', get_cuda_allocated(), get_cuda_max_allocated())
-            res, pre_max = fake_cuda_addmm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+        if func in mm_ops_list:
+            res, pre_max = wrapped_mm_ops(func, *tree_map(unwrap, args), **tree_map(unwrap, kwargs))
             MTensor.update_peak_memory(pre_max)
-            print('addmm aft', get_cuda_allocated(), get_cuda_max_allocated())
-        elif func is aten.mm.default:
-            # res = fake_cuda_mm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-            print('mm pre', get_cuda_allocated())
-            res, pre_max = fake_cuda_mm(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-            MTensor.update_peak_memory(pre_max)
-            print('mm aft', get_cuda_allocated())
         else:
             with no_dispatch():
                 res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-
-        # with no_dispatch():
-        #     res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
 
         outs = normalize_tuple(res)
         res = tree_map(wrap, outs)
