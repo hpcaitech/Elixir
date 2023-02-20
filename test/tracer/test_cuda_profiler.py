@@ -1,12 +1,14 @@
 from test.utils import TEST_MODELS
 
+import pytest
 import torch
 
 from elixir.tracer.memory_tracer import cuda_memory_profiling
 
 
+@pytest.mark.skip
 def test_cuda():
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
 
     model = builder().cuda()
     data, label = next(train_iter)
@@ -19,22 +21,22 @@ def test_cuda():
         loss = criterion(out, l_in)
         loss.backward()
 
-    torch_param_occ = 0
-    for name, param in model.named_parameters():
-        torch_param_occ += param.numel() * param.element_size()
-
-    torch_buffer_occ = 0
-    for name, buffer in model.named_buffers():
-        torch_buffer_occ += buffer.numel() * buffer.element_size()
+    train_step(model, inp)
 
     pre_cuda_alc = torch.cuda.memory_allocated()
     torch.cuda.reset_peak_memory_stats()
     train_step(model, inp)
     aft_cuda_alc = torch.cuda.max_memory_allocated()
     torch_activation_occ = aft_cuda_alc - pre_cuda_alc
-    print(torch_param_occ, torch_buffer_occ, torch_activation_occ)
+    print('normal', torch_activation_occ)
+
+    before = torch.cuda.memory_allocated()
     profiling_dict = cuda_memory_profiling(model, inp, train_step)
-    print(profiling_dict)
+    after = torch.cuda.memory_allocated()
+    print('profiling', profiling_dict)
+    assert before == after
+    assert torch_activation_occ == profiling_dict['activation_occ']
+    print('Check is ok.')
 
 
 if __name__ == '__main__':

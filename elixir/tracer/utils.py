@@ -69,16 +69,28 @@ def meta_copy(model: nn.Module, meta_fn: callable):
                 else:
                     new_buffer = meta_fn(buffer)
                     old_buffers[buffer_id] = new_buffer
-            setattr(new_module, name, new_buffer)
+            new_module.register_buffer(name, new_buffer)
 
     return new_model
 
 
 def get_cuda_allocated():
-    torch.cuda.synchronize()
     return torch.cuda.memory_allocated()
 
 
 def get_cuda_max_allocated():
-    torch.cuda.synchronize()
     return torch.cuda.max_memory_allocated()
+
+
+def model_memory_figure(model: nn.Module):
+    param_occ = 0
+    max_numel = 0
+    for name, param in model.named_parameters():
+        param_occ += param.numel() * param.element_size()
+        max_numel = max(max_numel, param.numel())
+
+    buffer_occ = 0
+    for name, buffer in model.named_buffers():
+        buffer_occ += buffer.numel() * buffer.element_size()
+
+    return dict(param_occ=param_occ, param_max_numel=max_numel, buffer_occ=buffer_occ)

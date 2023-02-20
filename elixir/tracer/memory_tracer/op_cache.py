@@ -85,11 +85,15 @@ def reset_caches():
 
 
 def fake_cuda_output(temp_memo, output_shape, dtype):
-    # allocate a long enough empty tensor block
-    temp = torch.empty(temp_memo, dtype=torch.int8, device='cuda')
-    # release this tensor block
-    del temp
     ret = torch.empty(output_shape, dtype=dtype, device='cuda')
+    sub = temp_memo - ret.numel() * ret.element_size()
+
+    if sub > 0:
+        # allocate a temp empty tensor block to simulate the computation in kernels
+        temp = torch.empty(sub, dtype=torch.int8, device='cuda')
+        # release this tensor block
+        del temp
+
     return ret
 
 

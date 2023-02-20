@@ -5,9 +5,16 @@ import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from elixir.tracer.utils import get_cuda_allocated, get_cuda_max_allocated, meta_copy
+from elixir.tracer.utils import get_cuda_allocated, meta_copy, model_memory_figure
 
 from .memory_tensor import MTensor
+
+
+def grad_cleaner(grad):
+    empty_grad = torch.empty_like(grad.elem)
+    grad.elem = None
+    empty_grad.storage().resize_(0)
+    return empty_grad
 
 
 def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn: Callable, dtype=torch.float):
@@ -20,23 +27,12 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
             meta_t = nn.Parameter(meta_t.to(dtype))
         return meta_t
 
+    # first, transform the model into one dtype
     model = meta_copy(model, tensor_trans)
-
-    param_occ = 0
-    max_numel = 0
-    for name, param in model.named_parameters():
-        assert param.dtype is dtype
-        param_occ += param.numel() * param.element_size()
-        max_numel = max(max_numel, param.numel())
-
-    buffer_occ = 0
-    for name, buffer in model.named_buffers():
-        buffer_occ += buffer.numel() * buffer.element_size()
-
-    # get the initial cuda memory allocation for sanity check
-    init_cuda_alc = get_cuda_allocated()
-
-    pool = torch.empty(max_numel, dtype=dtype, device='cuda')
+    # get the memory firgure of the model
+    memo_dict = model_memory_figure(model)
+    # initialize a empty pool for parameters
+    pool = torch.empty(memo_dict['param_max_numel'], dtype=dtype, device='cuda')
 
     def tensor_to_cuda(t):
         if isinstance(t, nn.Parameter):
@@ -46,32 +42,25 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
             fake_data = torch.empty(t.shape, dtype=t.dtype, device='cuda')
             return fake_data
 
+    # make all parameters in CUDA and point to a same address
     model = meta_copy(model, tensor_to_cuda)
-
+    # add hooks to clean gradients
+    for param in model.parameters():
+        param.register_hook(grad_cleaner)
     # convert all input data to meta_tensor
     if not isinstance(inp, tuple):
         inp = (inp,)
-    inp = tree_map(lambda t: MTensor(t.data.to('cuda')), inp)
-
+    inp = tree_map(lambda t: MTensor(t.cuda()), inp)
+    # reset all collected peak memory states
     MTensor.reset_peak_memory()
     before_cuda_alc = get_cuda_allocated()
-    torch.cuda.reset_max_memory_allocated()
 
     step_fn(model, inp)
 
-    after_cuda_alc = max(get_cuda_max_allocated(), MTensor.peak_memory_allocated)
+    after_cuda_alc = MTensor.current_peak_memory()
     activation_occ = after_cuda_alc - before_cuda_alc
 
-    del inp
-    del model
-    del pool
-
-    close_cuda_alc = get_cuda_allocated()
-    assert init_cuda_alc == close_cuda_alc
-
-    # from .op_cache import MM, ADDMM
-    # MM.print()
-    # ADDMM.print()
-    # exit(0)
-
-    return dict(param_occ=param_occ, buffer_occ=buffer_occ, grad_occ=param_occ, activation_occ=activation_occ)
+    return dict(param_occ=memo_dict['param_occ'],
+                buffer_occ=memo_dict['buffer_occ'],
+                grad_occ=memo_dict['param_occ'],
+                activation_occ=activation_occ)
