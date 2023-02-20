@@ -11,6 +11,9 @@ def test_fx_forward():
     model = builder()
     forward_order = generate_fx_order(model)
 
+    # for step in forward_order:
+    #     print(step)
+
     key0 = forward_order[0].keys()
     assert len(key0) == 1
     assert 'embed.weight' in key0

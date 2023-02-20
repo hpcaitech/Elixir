@@ -7,7 +7,7 @@ from elixir.tracer.param_tracer import generate_fx_order, generate_td_order
 
 
 def test_td_forward():
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('small')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     model = builder()
     data, label = next(train_iter)
 
