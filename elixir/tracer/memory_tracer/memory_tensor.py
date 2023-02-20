@@ -4,7 +4,7 @@ from typing import Iterator
 import torch
 from torch.utils._pytree import tree_map
 
-from elixir.tracer.utils import get_cuda_allocated, get_cuda_max_allocated
+from elixir.tracer.utils import get_cuda_max_allocated
 
 from .op_cache import wrapped_mm_ops
 
@@ -37,11 +37,17 @@ class MTensor(torch.Tensor):
 
     @staticmethod
     def reset_peak_memory():
+        torch.cuda.reset_peak_memory_stats()
         MTensor.peak_memory_allocated = 0
 
     @staticmethod
     def update_peak_memory(new_peak):
         MTensor.peak_memory_allocated = max(MTensor.peak_memory_allocated, new_peak)
+
+    @staticmethod
+    def current_peak_memory():
+        cur_peak = get_cuda_max_allocated()
+        return max(MTensor.peak_memory_allocated, cur_peak)
 
     @staticmethod
     def __new__(cls, elem, *args, **kwargs):
