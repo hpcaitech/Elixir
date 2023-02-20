@@ -146,7 +146,7 @@ def generate_td_order(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn
     # convert all input data to meta_tensor
     if not isinstance(inp, tuple):
         inp = (inp,)
-    inp = tree_map(lambda t: ATensor(t.data.to('meta')), inp)
+    inp = tree_map(lambda t: ATensor(torch.empty_like(t, device='meta', requires_grad=t.requires_grad)), inp)
 
     step_fn(model, inp)
 

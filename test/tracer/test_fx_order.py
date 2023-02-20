@@ -1,4 +1,4 @@
-from test.utils import TEST_MODELS
+from test.utils import TEST_MODELS, assert_dict_keys
 
 import torch
 import torch.nn as nn
@@ -14,33 +14,12 @@ def test_fx_forward():
     # for step in forward_order:
     #     print(step)
 
-    key0 = forward_order[0].keys()
-    assert len(key0) == 1
-    assert 'embed.weight' in key0
-
-    key1 = forward_order[1].keys()
-    assert len(key1) == 2
-    assert 'mlp.proj1.weight' in key1
-    assert 'mlp.proj1.bias' in key1
-
-    key2 = forward_order[2].keys()
-    assert len(key2) == 2
-    assert 'mlp.proj2.weight' in key2
-    assert 'mlp.proj2.bias' in key2
-
-    key3 = forward_order[3].keys()
-    assert len(key3) == 2
-    assert 'norm1.weight' in key3
-    assert 'norm1.bias' in key3
-
-    key4 = forward_order[4].keys()
-    assert len(key4) == 2
-    assert 'norm2.weight' in key4
-    assert 'norm2.bias' in key4
-
-    key5 = forward_order[5].keys()
-    assert len(key5) == 1
-    assert 'embed.weight' in key5
+    assert_dict_keys(forward_order[0], ['embed.weight'])
+    assert_dict_keys(forward_order[1], ['mlp.proj1.weight', 'mlp.proj1.bias'])
+    assert_dict_keys(forward_order[2], ['mlp.proj2.weight', 'mlp.proj2.bias'])
+    assert_dict_keys(forward_order[3], ['norm1.weight', 'norm1.bias'])
+    assert_dict_keys(forward_order[4], ['norm2.weight', 'norm2.bias'])
+    assert_dict_keys(forward_order[5], ['embed.weight'])
 
 
 if __name__ == '__main__':
