@@ -21,10 +21,13 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
 
     print(f'You are profiling cuda memory with dtype `{dtype}`')
 
-    def tensor_trans(t):
-        meta_t = t.data.to('meta')
+    def tensor_trans(t: torch.Tensor):
+        # set dtype for tensors
+        meta_dtype = dtype if t.is_floating_point() else t.dtype
+        meta_t = t.data.to(device='meta', dtype=meta_dtype)
+        # pack parameters
         if isinstance(t, nn.Parameter):
-            meta_t = nn.Parameter(meta_t.to(dtype))
+            meta_t = nn.Parameter(meta_t)
         return meta_t
 
     # first, transform the model into one dtype
@@ -32,14 +35,14 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
     # get the memory firgure of the model
     memo_dict = model_memory_figure(model)
     # initialize a empty pool for parameters
-    pool = torch.empty(memo_dict['param_max_numel'], dtype=dtype, device='cuda')
+    pool = torch.empty(memo_dict['param_max_numel'], device='cuda', dtype=dtype)
 
     def tensor_to_cuda(t):
         if isinstance(t, nn.Parameter):
             fake_data = pool[:t.numel()].view(t.shape)
             return nn.Parameter(fake_data)
         else:
-            fake_data = torch.empty(t.shape, dtype=t.dtype, device='cuda')
+            fake_data = torch.empty(t.shape, device='cuda', dtype=t.dtype)
             return fake_data
 
     # make all parameters in CUDA and point to a same address
@@ -50,7 +53,14 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
     # convert all input data to meta_tensor
     if not isinstance(inp, tuple):
         inp = (inp,)
-    inp = tree_map(lambda t: MTensor(t.cuda()), inp)
+
+    def input_trans(t: torch.Tensor):
+        cuda_dtype = dtype if t.is_floating_point() else t.dtype
+        cuda_t = t.data.to(dtype=cuda_dtype, device='cuda')
+        cuda_t.requires_grad = t.requires_grad
+        return MTensor(cuda_t)
+
+    inp = tree_map(input_trans, inp)
     # reset all collected peak memory states
     MTensor.reset_peak_memory()
     before_cuda_alc = get_cuda_allocated()
