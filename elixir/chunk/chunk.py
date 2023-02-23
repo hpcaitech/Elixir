@@ -1,121 +1,80 @@
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List, Optional
 
 import torch
 import torch.distributed as dist
-from colossalai.tensor import ProcessGroup as ColoProcessGroup
-from colossalai.utils import get_current_device
+from torch.distributed import ProcessGroup
 
+from elixir import gpu_dev
 
-class TensorState(Enum):
-    FREE = 0
-    COMPUTE = 1
-    HOLD = 2
-    HOLD_AFTER_BWD = 3
-    READY_FOR_REDUCE = 4
-    GATHERING = 5
-    REDUCING = 6
-
-
-STATE_TRANS = ((TensorState.FREE, TensorState.HOLD), (TensorState.FREE, TensorState.COMPUTE),
-               (TensorState.HOLD, TensorState.FREE), (TensorState.HOLD, TensorState.COMPUTE), (TensorState.COMPUTE,
-                                                                                               TensorState.HOLD),
-               (TensorState.COMPUTE, TensorState.HOLD_AFTER_BWD), (TensorState.HOLD_AFTER_BWD, TensorState.COMPUTE),
-               (TensorState.HOLD_AFTER_BWD, TensorState.READY_FOR_REDUCE), (TensorState.READY_FOR_REDUCE,
-                                                                            TensorState.HOLD))
-
-
-@dataclass
-class TensorInfo:
-    state: TensorState
-    offset: int
-    end: int
+from .memory_pool import MemoryPool
+from .states import ChunkState, TensorState, ts_update_sanity_check
 
 
 class ChunkFullError(Exception):
     pass
 
 
-def is_storage_empty(tensor: torch.Tensor) -> bool:
-    return tensor.storage().size() == 0
-
-
-def free_storage(tensor: torch.Tensor) -> None:
-    if not is_storage_empty(tensor):
-        tensor.storage().resize_(0)
-
-
-def alloc_storage(tensor: torch.Tensor) -> None:
-    if is_storage_empty(tensor):
-        tensor.storage().resize_(tensor.numel())
+@dataclass
+class TensorInfo:
+    state: TensorState
+    shape: torch.Size
+    offset: int
+    end: int
 
 
 class Chunk:
-    _total_number = 0
+    total_count = 0
 
-    def __init__(self,
-                 chunk_size: int,
-                 process_group: ColoProcessGroup,
-                 dtype: torch.dtype,
-                 init_device: Optional[torch.device] = None,
-                 cpu_shard_init: bool = False,
-                 keep_gathered: bool = False,
-                 pin_memory: bool = False) -> None:
-        """
-        Chunk: A container owning a piece of contiguous memory space for tensors
-        Here we use all-gather operation to gather the whole chunk.
-        Currently, Chunk is exclusively used for DDP and ZeRO DDP and it doesn't support unused parameters.
-        It is designed to make the full use of communication and PCIE bandwidth.
+    def __init__(
+        self,
+        rcache: MemoryPool,
+        chunk_size: int,
+        chunk_dtype: torch.dtype,
+        process_group: ProcessGroup,
+        init_temp_device: Optional[torch.device] = None,
+        init_shard_device: Optional[torch.device] = None,
+        pin_gpu: bool = False,    # whether this chunk is used in ZeRO2
+        pin_cpu: bool = False    # whether this chunk has a permanent copy in cpu
+    ) -> None:
 
-        Args:
-            chunk_size (int): the number of elements in the chunk
-            process_group (ColoProcessGroup): the process group of this chunk
-            dtype (torch.dtype): the data type of the chunk
-            init_device (torch.device): optional, During the chunk construction process, where the tensor is stored.
-                The default value is None, which is the current GPU
-            cpu_shard_init (bool): a flag indicates the local chunk shard is resident on CPU.
-            keep_gathered (bool): optional, if True, this chunk is always gathered in CUDA memory
-            pin_memory (bool): optional, if True, this chunk always has a shard copied in pinned CPU memory
-        """
-        self.count_id = Chunk._total_number
-        Chunk._total_number += 1
+        self.chunk_id = Chunk.total_count
+        Chunk.total_count += 1
 
         self.chunk_size = chunk_size
+        self.chunk_dtype = chunk_dtype
         self.utilized_size = 0
 
-        self.torch_pg = process_group.dp_process_group()
+        self.torch_pg = process_group
         self.pg_size = dist.get_world_size(self.torch_pg)
         self.pg_rank = dist.get_rank(self.torch_pg)
 
         # the chunk size should be divisible by the dp degree
-        if not keep_gathered:
-            assert chunk_size % self.pg_size == 0
+        assert chunk_size % self.pg_size == 0
+
         self.shard_size = chunk_size // self.pg_size
         self.shard_begin = self.shard_size * self.pg_rank
         self.shard_end = self.shard_begin + self.shard_size
-        self.valid_end = self.shard_size
+        self.valid_end = self.shard_size + 1    # set to an illegal number
 
-        self.dtype = dtype
-        device = init_device or get_current_device()
-
+        temp_device = init_temp_device or gpu_dev()
         # chunk_temp is a global chunk, which only exists during building the chunks.
-        self.chunk_temp = torch.zeros(chunk_size, dtype=dtype, device=device)    # keep all zero
+        # keep all elements to zero
+        self.chunk_temp = torch.zeros(chunk_size, dtype=chunk_dtype, device=temp_device)
 
-        self.cuda_global_chunk = None    # we force cuda_global_chunk located in CUDA
-
+        # rcache block, the global replicated chunk in R cache
+        self.rcb = None
         # cuda local chunk, which is sharded on GPUs
-        self.cuda_shard = None
-        # cpu local chunk, which is sharded on CPUs
+        self.gpu_shard = None
+        # cpu local chunk, which is sharded on CPU
         self.cpu_shard = None
-        # is the chunks gathers, which means chunks are duplicated on each process,
-        # and we should use the cuda_global_chunk.
-        self.is_gathered = True
+        # set the state to INIT
+        self.chunk_state = ChunkState.INIT
 
         # configure the init device of the shard
         # no-offload default: fp16, fp32 -> CUDA
         # offload default: fp16, fp32 -> CPU
-        self.shard_device = torch.device('cpu') if cpu_shard_init else get_current_device()
+        self.shard_device = init_shard_device or torch.device('cpu')
 
         self.chunk_mem = self.chunk_size * self.chunk_temp.element_size()
         self.shard_mem = self.chunk_mem // self.pg_size
@@ -131,15 +90,8 @@ class Chunk:
         for state in TensorState:
             self.tensor_state_cnter[state] = 0
 
-        # If a chunk is kept gathered,
-        # they are treated the same as that of the parameters in DDP during training.
-        self.keep_gathered = keep_gathered
-        if self.keep_gathered:
-            pin_memory = False    # since this chunk is gathered, it doesn't need to pin
-
-        # if pin_memory is True, we allocate a piece of CPU pin-memory
-        # for it all the time
-        self.pin_memory = pin_memory
+        self.pin_gpu = pin_gpu
+        self.pin_cpu = pin_cpu
 
         # we introduce the paired chunk here
         # it refers to another chunk having the same parameters
@@ -166,9 +118,9 @@ class Chunk:
             else:
                 cpu_memory += self.chunk_mem
         else:
-            if self.is_gathered:
-                cuda_memory += self.chunk_mem
-            if self.cuda_shard is not None:
+            if self.rcb is not None:
+                cuda_memory += self.rcb.memo_occ
+            if self.gpu_shard is not None:
                 cuda_memory += self.shard_mem
             if self.cpu_shard is not None:
                 cpu_memory += self.shard_mem
@@ -180,8 +132,8 @@ class Chunk:
         if self.chunk_temp is not None:
             return self.chunk_temp.device.type
         else:
-            if self.is_gathered:
-                return 'cuda'
+            if self.rcb is not None:
+                return 'rcache'
             elif self.cuda_shard is not None:
                 return 'cuda'
             else:
@@ -192,10 +144,10 @@ class Chunk:
         # sanity check
         assert self.chunk_temp is None
 
-        if self.is_gathered:
-            return self.cuda_global_chunk
-        elif self.cuda_shard is not None:
-            return self.cuda_shard
+        if self.rcb is not None:
+            return self.rcb.payload
+        elif self.gpu_shard is not None:
+            return self.gpu_shard
         else:
             return self.cpu_shard
 
@@ -204,7 +156,7 @@ class Chunk:
         # sanity check
         assert self.chunk_temp is None
 
-        if self.is_gathered:
+        if self.rcb is not None:
             return self.chunk_mem
         else:
             return self.shard_mem

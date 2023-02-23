@@ -58,7 +58,7 @@ class PrivateBlock(TensorBlock):
         return f'PrivateBlock{super().__repr__()}'
 
 
-class MemoryPool(ABC):
+class MemoryPool(object):
 
     def __init__(self, device_type: str) -> None:
         self.device_type: str = device_type
