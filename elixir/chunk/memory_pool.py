@@ -112,7 +112,7 @@ class MemoryPool(ABC):
         return f'public_space={_format_memory(self.public_space)}, private_space={self.private_sapce}'
 
     def get_private_block(self, numel: int, dtype: torch.dtype):
-        block_lsit = self.private_blocks.get(BlockRequire(numel=numel, dtype=dtype))
+        block_lsit = self.private_lookup_dict.get(BlockRequire(numel=numel, dtype=dtype))
         return block_lsit.pop()
 
     def get_public_block(self):
