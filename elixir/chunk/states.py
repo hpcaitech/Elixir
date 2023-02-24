@@ -10,12 +10,11 @@ class TensorState(Enum):
 
 
 class ChunkState(Enum):
-    INIT = 0
-    RCACHE = 1
-    UPLOADING = 2
-    OFFLOADING = 3
-    GPU = 4
-    CPU = 5
+    Init = 0
+    Repl = 1
+    Ging = 2
+    Ring = 3
+    Scat = 4
 
 
 # expected: free -> hold -> compute -> hold ->
