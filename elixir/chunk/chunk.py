@@ -8,7 +8,7 @@ from torch.distributed import ProcessGroup
 from elixir import gpu_dev
 
 from .memory_pool import MemoryPool, PrivateBlock, PublicBlock, TensorBlock
-from .states import ChunkState, TensorState, ts_update_sanity_check
+from .states import TensorState, ts_update_sanity_check
 
 
 class ChunkFullError(Exception):
@@ -74,7 +74,11 @@ class Chunk:
         # rcache block, the global replicated chunk in R cache
         self.rcb: Optional[TensorBlock] = None
         self.rcache_fused: bool = rcache_fused
+        self._my_block = None
         self.is_replica: bool = True
+        # allocate a private block for fused chunks
+        if self.rcache_fused:
+            self._my_block = rcache.get_private_block(chunk_size, chunk_dtype)
 
         temp_device: torch.device = temp_device or gpu_dev()
         # chunk_temp is a global chunk, which only exists during building the chunks.
@@ -89,7 +93,7 @@ class Chunk:
 
         # calculate the memory occupation of the chunk and the shard
         self.chunk_memo: int = self.chunk_size * self.chunk_temp.element_size()
-        self.shard_memo: int = self.chunk_mem // self.pg_size
+        self.shard_memo: int = self.chunk_memo // self.pg_size
 
         # each tensor is associated with a TensorInfo to track its meta info
         # (state, shape, offset, end)
@@ -113,11 +117,15 @@ class Chunk:
         self.l2_norm_flag = False
         self.l2_norm = None
         # whether it overflows after the reduction
-        self.overflow_flag = False
+        self.overflow = False
 
     @property
     def is_init(self):
         return self.chunk_temp is not None
+
+    @property
+    def in_rcache(self):
+        return self.rcb is not None
 
     @property
     def shard_device(self):
@@ -131,11 +139,11 @@ class Chunk:
         if self.is_init:
             # this chunk is not closed
             if self.chunk_temp.device.type == 'cuda':
-                cuda_memory += self.chunk_mem
+                cuda_memory += self.chunk_memo
             else:
-                cpu_memory += self.chunk_mem
+                cpu_memory += self.chunk_memo
         else:
-            if self.rcb is not None:
+            if self.in_rcache:
                 cuda_memory += self.rcb.memo_occ
 
             if self.shard_device.type == 'cuda':
@@ -152,18 +160,18 @@ class Chunk:
         if self.is_init:
             return self.chunk_temp
 
-        if self.rcb is not None:
+        if self.in_rcache:
             return self.rcb.payload
         else:
             return self.shard
 
     @property
     def shard_move_check(self) -> bool:
-        return not self.is_gathered
+        return not self.in_rcache
 
     @property
     def scatter_check(self) -> bool:
-        if self.keep_gathered:
+        if self.rcache_fused:
             return False
         return self.tensor_state_cnter[TensorState.HOLD] + \
             self.tensor_state_cnter[TensorState.HOLD_AFTER_BWD] == self.num_tensors
@@ -173,27 +181,18 @@ class Chunk:
         return self.tensor_state_cnter[TensorState.READY_FOR_REDUCE] == self.num_tensors
 
     def set_overflow_flag(self, valid_tensor: torch.Tensor) -> None:
-        """Check if the chunk has inf or nan values on CUDA.
-        """
-        assert not self.overflow_flag
-        self.overflow_flag = torch.isinf(valid_tensor).any().item() | torch.isnan(valid_tensor).any().item()
+        assert not self.overflow
+        self.overflow = torch.isinf(valid_tensor).any().item() | torch.isnan(valid_tensor).any().item()
 
     def set_l2_norm(self, valid_tensor: torch.Tensor) -> None:
-        """Record l2 norm of this chunks on CUDA.
-        """
         assert self.l2_norm is None, 'you are calculating the l2 norm twice'
         chunk_l2_norm = valid_tensor.data.float().norm(2)
         self.l2_norm = chunk_l2_norm.item()**2
 
     def append_tensor(self, tensor: torch.Tensor):
-        """Add a tensor to the chunk.
-
-        Args:
-            tensor (torch.Tensor): a tensor to be added to the chunk
-        """
         # sanity check
         assert self.is_init
-        assert tensor.dtype == self.dtype
+        assert tensor.dtype == self.chunk_dtype
 
         new_utilized_size = self.utilized_size + tensor.numel()
         # raise exception when the chunk size is exceeded
@@ -211,8 +210,7 @@ class Chunk:
         self.utilized_size = new_utilized_size
 
     def close_chunk(self):
-        """Close the chunk. Any tensor can't be appended to a closed chunk later.
-        """
+        # TODO(hhc): deal with fused chunks
         # sanity check
         assert self.is_init
 

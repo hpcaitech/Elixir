@@ -9,14 +9,6 @@ class TensorState(Enum):
     READY_FOR_REDUCE = 4
 
 
-class ChunkState(Enum):
-    Init = 0
-    Repl = 1
-    Ging = 2
-    Ring = 3
-    Scat = 4
-
-
 # expected: free -> hold -> compute -> hold ->
 # -> compute -> hold_after_bwd -> ready_for_reduce
 legal_ts_update_list = [(TensorState.FREE, TensorState.HOLD), (TensorState.FREE, TensorState.COMPUTE),
