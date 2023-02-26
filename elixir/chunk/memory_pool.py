@@ -1,6 +1,6 @@
 from abc import ABC
 from collections import defaultdict
-from typing import NamedTuple
+from typing import Iterable, NamedTuple
 
 import torch
 from torch.autograd.profiler_util import _format_memory
@@ -73,16 +73,19 @@ class MemoryPool(object):
         self.public_free_cnt: int = 0
         self.public_used_cnt: int = 0
 
-        self.private_sapce: int = 0
+        self.private_space: int = 0
         self.private_blocks: list = None
         self.private_lookup_dict: dict[BlockRequire, list] = None
 
         self.__allocate_flag = False
 
-    def allocate(self, public_dtype: torch.dtype, public_block_size: int, public_block_number: int,
-                 private_block_list: list[BlockRequire]):
+    def allocate(self,
+                 public_dtype: torch.dtype = torch.float,
+                 public_block_size: int = 1024,
+                 public_block_number: int = 0,
+                 private_block_list: Iterable[BlockRequire] = ()):
         assert self.__allocate_flag is False
-        assert public_block_number > 0
+        assert public_block_number >= 0
 
         self.public_free_blocks = list()
         self.public_used_blocks = set()
@@ -100,6 +103,7 @@ class MemoryPool(object):
         self.private_space = 0
         self.private_blocks = list()
         self.private_lookup_dict = defaultdict(list)
+
         for require in private_block_list:
             block = PrivateBlock(require.numel, require.dtype, self.device_type)
             self.private_space += block.memo_occ
@@ -109,15 +113,15 @@ class MemoryPool(object):
         self.__allocate_flag = True
 
     def __repr__(self) -> str:
-        return f'public_space={_format_memory(self.public_space)}, private_space={self.private_sapce}'
+        return f'MP(public_space={_format_memory(self.public_space)}, private_space={self.private_space})'
 
     def get_private_block(self, numel: int, dtype: torch.dtype):
         block_lsit = self.private_lookup_dict.get(BlockRequire(numel=numel, dtype=dtype))
         return block_lsit.pop()
 
     def get_public_block(self):
-        self.public_free_blocks -= 1
-        self.public_used_blocks += 1
+        self.public_free_cnt -= 1
+        self.public_used_cnt += 1
 
         block = self.public_free_blocks.pop()
         self.public_used_blocks.add(block)
@@ -128,21 +132,10 @@ class MemoryPool(object):
         assert isinstance(block, PublicBlock)
         assert block in self.public_used_blocks
 
-        self.public_free_blocks += 1
-        self.public_used_blocks -= 1
+        self.public_free_cnt += 1
+        self.public_used_cnt -= 1
 
         self.public_used_blocks.remove(block)
         self.public_free_blocks.append(block)
 
         return block
-
-
-def main():
-    b = PublicBlock(1024, torch.float16, 'cuda')
-    c = PrivateBlock(3, torch.float, 'cpu')
-    print(b)
-    print(c)
-
-
-if __name__ == '__main__':
-    main()
