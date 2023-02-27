@@ -120,6 +120,10 @@ class Chunk:
         self.overflow = False
 
     @property
+    def prepared_block(self):
+        return self._my_block
+
+    @property
     def is_init(self):
         return self.chunk_temp is not None
 
@@ -169,12 +173,18 @@ class Chunk:
     def shard_move_check(self) -> bool:
         return not self.in_rcache
 
+    def _not_compute_number(self):
+        total = 0
+        state_list = [TensorState.HOLD, TensorState.HOLD_AFTER_BWD, TensorState.READY_FOR_REDUCE]
+        for state in state_list:
+            total += self.tensor_state_cnter[state]
+        return total
+
     @property
     def scatter_check(self) -> bool:
         if self.rcache_fused:
             return False
-        return self.tensor_state_cnter[TensorState.HOLD] + \
-            self.tensor_state_cnter[TensorState.HOLD_AFTER_BWD] == self.num_tensors
+        return self._not_compute_number() == self.num_tensors
 
     @property
     def reduce_check(self):
@@ -210,7 +220,6 @@ class Chunk:
         self.utilized_size = new_utilized_size
 
     def close_chunk(self):
-        # TODO(hhc): deal with fused chunks
         # sanity check
         assert self.is_init
 
@@ -222,13 +231,12 @@ class Chunk:
 
         self.__update_shard(self.chunk_temp, self.shard)
         self.is_replica = False
-
         self.chunk_temp = None
 
     def replicate(self):
         assert not self.is_replica
 
-        this_shard = self.shard if self.optim_sync_flag else self.__paired_shard_move()
+        this_shard = self.shard if self.optim_sync_flag else self.__paired_shard()
         self.__update_replica(self.rcb.payload, this_shard)
         self.__update_tensors_ptr()
         self.is_replica = True
@@ -267,7 +275,7 @@ class Chunk:
 
         if self.rcache_fused:
             assert block is None
-            assert self.rcb.block_type == 'private'
+            self.rcb = self._my_block
         else:
             assert block.block_type == 'public'
             assert self.rcb is None
@@ -298,50 +306,29 @@ class Chunk:
         self.reduce()
         self.__update_tensors_state(TensorState.HOLD)
 
-        if self.rcache_fused:
-            return None
-
+        # reset the rcb pointer
         block = self.rcb
         self.rcb = None
-        return block
+
+        if self.rcache_fused:
+            return None
+        else:
+            return block
 
     def tensor_trans_state(self, tensor: torch.Tensor, tensor_state: TensorState) -> None:
-        """
-        Make a transition of the tensor into the next state.
-
-        Args:
-            tensor (torch.Tensor): a torch Tensor object.
-            tensor_state (TensorState): the target state for transition.
-        """
-
-        # As the gradient hook can be triggered either before or after post-backward
-        # tensor's state can be compute -> hold_after_bwd -> ready_for_reduce
-        # or compute -> ready_for_reduce -> hold_after_bwd
-        # the second one is invalid, we just ignore ready_for_reduce -> hold_after_bwd
-        # this function only apply valid state transformation
-        # invalid calls will be ignored and nothing changes
-        if (self.tensors_info[tensor].state, tensor_state) not in STATE_TRANS:
-            return
-        self.__update_one_tensor_info(self.tensors_info[tensor], tensor_state)
+        if ts_update_sanity_check(self.tensors_info[tensor].state, tensor_state):
+            self.__update_one_tensor_info(self.tensors_info[tensor], tensor_state)
 
     def copy_tensor_to_chunk_slice(self, tensor: torch.Tensor, data_slice: torch.Tensor) -> None:
-        """
-        Copy data slice to the memory space indexed by the input tensor in the chunk.
-
-        Args:
-            tensor (torch.Tensor): the tensor used to retrive meta information
-            data_slice (torch.Tensor): the tensor to be copied to the chunk
-        """
         # sanity check
-        assert self.is_gathered
+        assert self.is_replica
 
         tensor_info = self.tensors_info[tensor]
-        self.cuda_global_chunk[tensor_info.offset:tensor_info.end].copy_(data_slice.data.flatten())
-        tensor.data = self.cuda_global_chunk[tensor_info.offset:tensor_info.end].view(tensor.shape)
+        payload = self.rcb.payload
+        payload[tensor_info.offset:tensor_info.end].copy_(data_slice.data.flatten())
+        tensor.data = payload[tensor_info.offset:tensor_info.end].view(tensor_info.shape)
 
     def init_pair(self, friend_chunk: 'Chunk') -> None:
-        """Initialize the paired chunk.
-        """
         if self.paired_chunk is None and friend_chunk.paired_chunk is None:
             self.paired_chunk = friend_chunk
             friend_chunk.paired_chunk = self
@@ -354,23 +341,20 @@ class Chunk:
         """
         # sanity check
         assert self.paired_chunk is not None
+        friend_chunk: Chunk = self.paired_chunk
+        assert not friend_chunk.is_replica
+        # gradient and optimizer should be on the same device
+        assert self.shard_device.type == friend_chunk.shard_device.type
 
-        friend_chunk = self.paired_chunk
-        if self.is_gathered is True:
-            assert friend_chunk.is_gathered is True
-            self.cuda_global_chunk.copy_(friend_chunk.cuda_global_chunk)
+        if self.shard_device.type == 'cuda':
+            self.shard.copy_(friend_chunk.shard)
             self.optim_sync_flag = True
-        elif friend_chunk.device_type == 'cuda' and self.device_type == 'cuda':
-            self.cuda_shard.copy_(friend_chunk.cuda_shard)
-            self.optim_sync_flag = True
-            self.cpu_vis_flag = False
-        else:
+        elif self.shard_device.type == 'cpu':
             # optim_sync_flag is set to False
             # see shard_move function for more details
-            assert friend_chunk.device_type == 'cpu'
-            assert self.device_type == 'cpu'
             self.optim_sync_flag = False
-            self.cpu_vis_flag = False
+        else:
+            raise NotImplementedError
 
     def get_tensors(self) -> List[torch.Tensor]:
         return list(self.tensors_info.keys())
@@ -393,20 +377,15 @@ class Chunk:
 
         shard.copy_(replica[self.shard_begin:self.shard_end])
 
-    def __paired_shard_move(self):
+    def __paired_shard(self):
         assert self.paired_chunk is not None, 'chunks should be paired before training'
-        optim_chunk = self.paired_chunk
+        optim_chunk: Chunk = self.paired_chunk
         assert self.chunk_size == optim_chunk.chunk_size
 
         # only be called when optimizer state is in CPU memory
         # the grad and param should be in the same device
-        assert self.cuda_shard is None
-        temp = optim_chunk.cpu_shard.to(get_current_device())
-        # avoid to transform FP32 in CPU
-        self.cuda_shard = temp.to(self.dtype)
-
-        if not self.pin_memory:
-            self.cpu_shard = None
+        assert self.shard_device.type == 'cpu'
+        return optim_chunk.shard.to(gpu_dev())
 
     def __remove_tensors_ptr(self) -> None:
         empty_tensor = torch.empty(0, device='cuda')
@@ -418,7 +397,7 @@ class Chunk:
         assert self.is_replica
         payload = self.rcb.payload
         for tensor, tensor_info in self.tensors_info.items():
-            tensor.data = self.payload[tensor_info.offset:tensor_info.end].view(tensor_info.shape)
+            tensor.data = payload[tensor_info.offset:tensor_info.end].view(tensor_info.shape)
 
     def __update_one_tensor_info(self, tensor_info: TensorInfo, next_state: TensorState):
         self.tensor_state_cnter[tensor_info.state] -= 1
@@ -438,32 +417,25 @@ class Chunk:
 
     def __repr__(self, detailed: bool = True):
         output = [
-            'Chunk Information:\n',
-            '\tchunk size: {}, chunk dtype: {}, process group size: {}\n'.format(self.chunk_size, self.dtype,
-                                                                                 self.pg_size),
-            '\t# of tensors: {}, utilized size: {}, utilized percentage: {:.2f}\n'.format(
-                self.num_tensors, self.utilized_size, self.utilized_size / self.chunk_size)
+            'Chunk details:\n', f'\tsize={self.chunk_size}, dtype={self.chunk_dtype}, comm_size: {self.pg_size},\n'
+            f'\tnumber_tensor={self.num_tensors}, utilized_size={self.utilized_size}, utilized_percentage={self.utilized_size / self.chunk_size:.2f}\n'
         ]
 
         def print_tensor(tensor, prefix=''):
             output.append('{}shape: {}, dtype: {}, device: {}\n'.format(prefix, tensor.shape, tensor.dtype,
                                                                         tensor.device))
 
-        if self.chunk_temp is not None:
+        if self.is_init:
             output.append('\tchunk temp:\n')
             print_tensor(tensor=self.chunk_temp, prefix='\t\t')
 
-        if self.cuda_global_chunk is not None and self.cuda_global_chunk.storage().size() > 0:
-            output.append('\tchunk total:\n')
-            print_tensor(tensor=self.cuda_global_chunk, prefix='\t\t')
+        if self.in_rcache:
+            output.append('\trcache block:\n')
+            print_tensor(tensor=self.rcb.payload, prefix='\t\t')
 
-        if self.cuda_shard is not None:
-            output.append('\tcuda shard:\n')
-            print_tensor(tensor=self.cuda_shard, prefix='\t\t')
-
-        if self.cpu_shard is not None:
-            output.append('\tcpu shard:\n')
-            print_tensor(tensor=self.cpu_shard, prefix='\t\t')
+        if self.shard is not None:
+            output.append('\tchunk shard:\n')
+            print_tensor(tensor=self.shard, prefix='\t\t')
 
         memory_info = self.memory_usage
         output.append('\tmemory usage: cuda {}, cpu {}\n'.format(memory_info['cuda'], memory_info['cpu']))
