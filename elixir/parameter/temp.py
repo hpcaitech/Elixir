@@ -6,6 +6,8 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
+white_list = [torch.Tensor.__getitem__]
+
 
 class FakeTensor(torch.Tensor):
 
@@ -74,7 +76,7 @@ class MyParameter(nn.Parameter):
         if kwargs is None:
             kwargs = {}
 
-        if func.__name__.startswith('__'):
+        if func.__name__.startswith('__') and func not in white_list:
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret
@@ -101,10 +103,37 @@ class MyParameter(nn.Parameter):
             return x
 
         with torch._C.DisableTorchFunction():
+            # for x in new_params:
+            #     print("new_params", type(x))
+            #     if isinstance(x, torch.Tensor):
+            #         print(x.shape, x.dtype)
+            # for x in args:
+            #     print("args", type(x))
+            #     if isinstance(x, torch.Tensor):
+            #         print(x.shape, x.dtype)
+            #
+            # for k, v in kwargs.items():
+            #     print("kwargs", k, v)
+            #     if isinstance(v, torch.Tensor):
+            #         print(v.shape, v.dtype)
+
             ret = func(*tree_map(replace_param, args), **tree_map(replace_param, kwargs))
 
+        if not isinstance(ret, tuple):
+            ret = (ret,)
+
+        ptr_set = set()
+        for p in new_params:
+            ptr_set.add(p.data_ptr())
+
+        def clone_inplace_tensor(x):
+            if isinstance(x, torch.Tensor) and x.data_ptr() in ptr_set:
+                return x.clone()
+            return x
+
+        ret = tree_map(clone_inplace_tensor, ret)
         with torch._C.DisableTorchFunction():
-            ret = PostFwdPreBwd.apply(params, ret)
+            ret = PostFwdPreBwd.apply(params, *ret)
 
         if len(ret) == 1:
             return ret[0]
@@ -112,7 +141,7 @@ class MyParameter(nn.Parameter):
             return ret
 
 
-def transform(m: nn.Module) -> nn.Module:
+def transform(m: nn.Module, concrete_args=None) -> nn.Module:
     # transform each parameter to MyParameter
     for m_name, module in m.named_modules():
         param_list = list(module.named_parameters(recurse=False))
@@ -126,7 +155,9 @@ def transform(m: nn.Module) -> nn.Module:
         if hasattr(module, 'inplace'):
             module.inplace = False
 
-    gm: torch.fx.GraphModule = torch.fx.symbolic_trace(m)
+    return m
+    import torch.fx as fx
+    gm: fx.GraphModule = fx.symbolic_trace(m, concrete_args=concrete_args)
     for node in gm.graph.nodes:
         if node.op in ('call_function', 'call_method'):
             if 'inplace' in node.kwargs:
@@ -140,3 +171,25 @@ def transform(m: nn.Module) -> nn.Module:
     # exit(0)
 
     return gm
+
+
+def main():
+    torch.Tensor.add_ = torch.Tensor.add
+
+    # x = MyParameter(torch.randn(4, 4))
+    # print(x.my_data.data_ptr())
+    # y = MyParameter(torch.randn(4, 4))
+    # print(y.my_data.data_ptr())
+
+    x = torch.randn(4, 4)
+    print(x.data_ptr())
+    y = torch.randn(4, 4)
+    print(y.data_ptr())
+
+    x += y
+
+    print(x.data_ptr())
+
+
+if __name__ == '__main__':
+    main()
