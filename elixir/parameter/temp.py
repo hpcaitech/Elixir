@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-white_list = [torch.Tensor.__getitem__]
+from elixir.parameter import OutplaceTensor, is_tensor_output, to_outplace_tensor
 
 
 class FakeTensor(torch.Tensor):
@@ -58,10 +58,12 @@ class PostFwdPreBwd(torch.autograd.Function):
         return (None, *grads)
 
 
-class MyParameter(nn.Parameter):
+class MyParameter(OutplaceTensor):
 
     def __new__(cls, tensor, requires_grad=True):
         r = torch.Tensor._make_subclass(cls, tensor, require_grad=requires_grad)
+        if isinstance(tensor, nn.Parameter):
+            r = nn.Parameter(r)
         with torch._C.DisableTorchFunction():
             r.my_shape = tensor.shape
             r.my_dtype = tensor.dtype
@@ -76,7 +78,7 @@ class MyParameter(nn.Parameter):
         if kwargs is None:
             kwargs = {}
 
-        if func.__name__.startswith('__') and func not in white_list:
+        if is_tensor_output(func):
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret
@@ -135,6 +137,13 @@ class MyParameter(nn.Parameter):
         with torch._C.DisableTorchFunction():
             ret = PostFwdPreBwd.apply(params, *ret)
 
+        def convert(t):
+            if isinstance(t, torch.Tensor):
+                t = to_outplace_tensor(t)
+            return t
+
+        ret = tree_map(convert, ret)
+
         if len(ret) == 1:
             return ret[0]
         else:
@@ -155,22 +164,17 @@ def transform(m: nn.Module, concrete_args=None) -> nn.Module:
         if hasattr(module, 'inplace'):
             module.inplace = False
 
+    def transform_input(self_module, inputs):
+        input_list = list()
+        for t in inputs:
+            if isinstance(t, torch.Tensor):
+                t = to_outplace_tensor(t)
+            input_list.append(t)
+        return tuple(input_list)
+
+    m.register_forward_pre_hook(transform_input)
+
     return m
-    import torch.fx as fx
-    gm: fx.GraphModule = fx.symbolic_trace(m, concrete_args=concrete_args)
-    for node in gm.graph.nodes:
-        if node.op in ('call_function', 'call_method'):
-            if 'inplace' in node.kwargs:
-                new_kwargs = {k: v for k, v in node.kwargs.items() if k != 'inplace'}
-                node.kwargs = immutable_dict(new_kwargs)
-
-    # remove inplace operations
-    gm.recompile()
-
-    # print(gm.graph)
-    # exit(0)
-
-    return gm
 
 
 def main():
@@ -180,15 +184,21 @@ def main():
     # print(x.my_data.data_ptr())
     # y = MyParameter(torch.randn(4, 4))
     # print(y.my_data.data_ptr())
+    import torch.nn.functional as F
 
     x = torch.randn(4, 4)
-    print(x.data_ptr())
-    y = torch.randn(4, 4)
-    print(y.data_ptr())
+    x = to_outplace_tensor(x)
 
-    x += y
+    x = F.relu(x, True)
 
-    print(x.data_ptr())
+    exit(0)
+
+    print(x.data_ptr(), x)
+    y = torch.randn(4, 4, requires_grad=True)
+    y = to_outplace_tensor(y)
+    print(y.data_ptr(), y)
+
+    print(x.data_ptr(), x)
 
 
 if __name__ == '__main__':

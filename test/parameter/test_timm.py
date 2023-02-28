@@ -56,6 +56,6 @@ def test_timm_models():
 
 
 if __name__ == '__main__':
-    # test_timm_models()
-    torch.Tensor.add_ = torch.Tensor.add
-    test_model(tm.resnest.resnest50d, {})
+    test_timm_models()
+    # torch.Tensor.add_ = torch.Tensor.add
+    # test_model(tm.resnest.resnest50d, {})
