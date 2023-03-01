@@ -150,7 +150,7 @@ class MyParameter(OutplaceTensor):
             return ret
 
 
-def transform(m: nn.Module, concrete_args=None) -> nn.Module:
+def transform(m: nn.Module) -> nn.Module:
     # transform each parameter to MyParameter
     for m_name, module in m.named_modules():
         param_list = list(module.named_parameters(recurse=False))

@@ -23,10 +23,10 @@ def test_model(builder, kwargs):
     data = torch.randn(2, 3, 224, 224, device='cuda')
     torch_model = builder(**kwargs).cuda()
     test_model = deepcopy(torch_model)
+    test_model = transform(test_model)
 
     torch_model.eval()
     test_model.eval()
-    test_model = transform(test_model, concrete_args={'x': data})
 
     torch_out = torch_model(data)
     test_out = test_model(data)
