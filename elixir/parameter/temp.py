@@ -6,26 +6,7 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-from elixir.parameter import OutplaceTensor, is_tensor_output, to_outplace_tensor
-
-
-class FakeTensor(torch.Tensor):
-
-    @staticmethod
-    def __new__(cls, elem, *args, **kwargs):
-        r = torch.Tensor._make_wrapper_subclass(cls,
-                                                elem.size(),
-                                                strides=elem.stride(),
-                                                storage_offset=elem.storage_offset(),
-                                                dtype=elem.dtype,
-                                                layout=elem.layout,
-                                                device=elem.device,
-                                                requires_grad=elem.requires_grad)
-        return r
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        raise NotImplementedError
+from elixir.parameter import FakeTensor, OutplaceTensor, is_tensor_output, to_outplace_tensor
 
 
 class PreFwdPostBwd(torch.autograd.Function):

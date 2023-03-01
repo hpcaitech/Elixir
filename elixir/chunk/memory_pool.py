@@ -1,12 +1,14 @@
 from abc import ABC
 from collections import defaultdict
-from typing import Iterable, NamedTuple
+from dataclasses import dataclass
+from typing import Iterable
 
 import torch
 from torch.autograd.profiler_util import _format_memory
 
 
-class BlockRequire(NamedTuple):
+@dataclass
+class BlockRequire:
     numel: int
     dtype: torch.dtype
 

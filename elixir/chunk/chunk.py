@@ -6,6 +6,7 @@ import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
 from elixir import gpu_dev
+from elixir.parameter import FakeTensor
 
 from .memory_pool import MemoryPool, PrivateBlock, PublicBlock, TensorBlock
 from .states import TensorState, ts_update_sanity_check
@@ -18,7 +19,7 @@ class ChunkFullError(Exception):
 @dataclass
 class TensorInfo:
     state: TensorState
-    shape: torch.Size
+    fake_data: FakeTensor
     offset: int
     end: int
 
@@ -211,12 +212,18 @@ class Chunk:
 
         self.chunk_temp[self.utilized_size:new_utilized_size].copy_(tensor.data.flatten())
         tensor.data = self.chunk_temp[self.utilized_size:new_utilized_size].view(tensor.shape)
+        fake_data = FakeTensor(tensor.data)
 
         # record all the information about the tensor
         self.num_tensors += 1
         tensor_state = TensorState.HOLD
-        self.tensors_info[tensor] = TensorInfo(tensor_state, tensor.shape, self.utilized_size, new_utilized_size)
         self.tensor_state_cnter[tensor_state] += 1
+
+        self.tensors_info[tensor] = TensorInfo(state=tensor_state,
+                                               fake_data=fake_data,
+                                               offset=self.utilized_size,
+                                               end=new_utilized_size)
+
         self.utilized_size = new_utilized_size
 
     def close_chunk(self):
@@ -229,6 +236,7 @@ class Chunk:
         elif self.utilized_size < self.shard_end:
             self.valid_end = self.utilized_size - self.shard_begin
 
+        self.__remove_tensors_ptr()
         self.__update_shard(self.chunk_temp, self.shard)
         self.is_replica = False
         self.chunk_temp = None
@@ -277,7 +285,7 @@ class Chunk:
             assert block is None
             self.rcb = self._my_block
         else:
-            assert block.block_type == 'public'
+            assert block in self.rcache.public_used_blocks
             assert self.rcb is None
             self.rcb = block
 
@@ -323,10 +331,10 @@ class Chunk:
         # sanity check
         assert self.is_replica
 
-        tensor_info = self.tensors_info[tensor]
+        info = self.tensors_info[tensor]
         payload = self.rcb.payload
-        payload[tensor_info.offset:tensor_info.end].copy_(data_slice.data.flatten())
-        tensor.data = payload[tensor_info.offset:tensor_info.end].view(tensor_info.shape)
+        payload[info.offset:info.end].copy_(data_slice.data.flatten())
+        tensor.data = payload[info.offset:info.end].view(tensor.shape)
 
     def init_pair(self, friend_chunk: 'Chunk') -> None:
         if self.paired_chunk is None and friend_chunk.paired_chunk is None:
@@ -357,6 +365,7 @@ class Chunk:
             raise NotImplementedError
 
     def get_tensors(self) -> List[torch.Tensor]:
+        assert self.is_replica
         return list(self.tensors_info.keys())
 
     def __update_replica(self, replica: torch.Tensor, shard: torch.Tensor):
@@ -388,16 +397,19 @@ class Chunk:
         return optim_chunk.shard.to(gpu_dev())
 
     def __remove_tensors_ptr(self) -> None:
-        empty_tensor = torch.empty(0, device='cuda')
-        for tensor in self.tensors_info:
-            tensor.data = empty_tensor
+        # sanity check
+        # each tensor should point to its fake data before scatter
+        assert self.is_replica
+        for tensor, info in self.tensors_info.items():
+            tensor.data = info.fake_data
 
     def __update_tensors_ptr(self) -> None:
         # sanity check
+        # the chunk should be replicated to get the correct pointer
         assert self.is_replica
         payload = self.rcb.payload
-        for tensor, tensor_info in self.tensors_info.items():
-            tensor.data = payload[tensor_info.offset:tensor_info.end].view(tensor_info.shape)
+        for tensor, info in self.tensors_info.items():
+            tensor.data = payload[info.offset:info.end].view(tensor.shape)
 
     def __update_one_tensor_info(self, tensor_info: TensorInfo, next_state: TensorState):
         self.tensor_state_cnter[tensor_info.state] -= 1
