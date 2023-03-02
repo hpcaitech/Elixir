@@ -39,12 +39,10 @@ class PostFwdPreBwd(torch.autograd.Function):
         return (None, *grads)
 
 
-class MyParameter(OutplaceTensor):
+class MyParameter(OutplaceTensor, nn.Parameter):
 
     def __new__(cls, tensor, requires_grad=True):
         r = torch.Tensor._make_subclass(cls, tensor, require_grad=requires_grad)
-        if isinstance(tensor, nn.Parameter):
-            r = nn.Parameter(r)
         with torch._C.DisableTorchFunction():
             r.my_shape = tensor.shape
             r.my_dtype = tensor.dtype
@@ -159,27 +157,9 @@ def transform(m: nn.Module) -> nn.Module:
 
 
 def main():
-    torch.Tensor.add_ = torch.Tensor.add
-
-    # x = MyParameter(torch.randn(4, 4))
-    # print(x.my_data.data_ptr())
-    # y = MyParameter(torch.randn(4, 4))
-    # print(y.my_data.data_ptr())
-    import torch.nn.functional as F
-
     x = torch.randn(4, 4)
-    x = to_outplace_tensor(x)
-
-    x = F.relu(x, True)
-
-    exit(0)
-
-    print(x.data_ptr(), x)
-    y = torch.randn(4, 4, requires_grad=True)
-    y = to_outplace_tensor(y)
-    print(y.data_ptr(), y)
-
-    print(x.data_ptr(), x)
+    z = MyParameter(x)
+    print(isinstance(z, nn.Parameter))
 
 
 if __name__ == '__main__':

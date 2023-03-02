@@ -9,6 +9,12 @@ import torch.distributed as dist
 from . import meta_registrations
 
 
+def normalize_tuple(x):
+    if not isinstance(x, tuple):
+        return (x,)
+    return x
+
+
 @cache
 def gpu_dev():
     return torch.device(torch.cuda.current_device())
