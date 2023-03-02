@@ -3,22 +3,34 @@ from test.utils import TEST_MODELS, assert_dict_keys
 import torch
 import torch.nn as nn
 
-from elixir.tracer.param_tracer import generate_fx_order, generate_td_order
+from elixir.tracer.param_tracer import generate_tf_order
 
 
-def test_td_forward_backward():
+class M(nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bn = nn.BatchNorm1d(16)
+
+    def forward(self, x):
+        return x + self.bn(x)
+
+
+def test_tf_forward_backward():
     builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     model = builder()
     data, label = next(train_iter)
 
-    # data.requires_grad = True
+    # model = M()
+    # data = torch.randn(4, 16)
 
-    def forward_backward_fn(model, inp):
-        model(*inp).sum().backward()
+    def forward_backward_fn(model, data):
+        model(data).sum().backward()
 
-    td_order = generate_td_order(model, data, forward_backward_fn)
-    for step_dict in td_order:
+    tf_order = generate_tf_order(model, data, forward_backward_fn)
+    for step_dict in tf_order:
         print(step_dict)
+
     exit(0)
 
     assert_dict_keys(td_order[0], ['proj1.weight'])
@@ -32,4 +44,4 @@ def test_td_forward_backward():
 
 
 if __name__ == '__main__':
-    test_td_forward_backward()
+    test_tf_forward_backward()

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import random
 from functools import cache
@@ -7,6 +8,15 @@ import torch
 import torch.distributed as dist
 
 from . import meta_registrations
+
+
+@contextlib.contextmanager
+def no_dispatch():
+    guard = torch._C._DisableTorchDispatch()
+    try:
+        yield
+    finally:
+        del guard
 
 
 def normalize_tuple(x):
