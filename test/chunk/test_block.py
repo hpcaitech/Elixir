@@ -30,17 +30,21 @@ def test_memory_pool():
 
     block0 = mp.get_public_block()
 
+    assert block0 in mp.public_used_blocks
     assert mp.public_used_cnt == 1
     assert mp.public_free_cnt == 3
 
     block1 = mp.get_public_block()
 
+    assert block1 in mp.public_used_blocks
     assert mp.public_used_cnt == 2
     assert mp.public_free_cnt == 2
 
     mp.free_public_block(block0)
     mp.free_public_block(block1)
 
+    assert block0 in mp.public_free_blocks
+    assert block1 in mp.public_free_blocks
     assert mp.public_used_cnt == 0
     assert mp.public_free_cnt == 4
 
@@ -52,4 +56,5 @@ def test_memory_pool():
 
 
 if __name__ == '__main__':
+    test_block()
     test_memory_pool()

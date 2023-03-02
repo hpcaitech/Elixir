@@ -64,7 +64,7 @@ class Chunk:
         # no-offload default: fp16, fp32 -> CUDA
         # offload default: fp16, fp32 -> CPU
         shard_device: torch.device = shard_device or torch.device('cpu')
-        pin_flag: bool = cpu_pin_memory and shard_device.type is 'cpu'
+        pin_flag: bool = cpu_pin_memory and shard_device.type == 'cpu'
         # chunk.shard is a local chunk
         # it is desinged to exist permanently
         self.shard: torch.Tensor = torch.empty(self.shard_size,
@@ -86,8 +86,7 @@ class Chunk:
         # keep all elements to zero
         self.chunk_temp: Optional[torch.Tensor] = None
         if rcache_fused:
-            self.rcb = rcache.get_private_block(chunk_size, chunk_dtype)
-            self.chunk_temp = self.rcb.payload
+            self.chunk_temp = self._my_block.payload
             torch.zero_(self.chunk_temp)
         else:
             self.chunk_temp = torch.zeros(chunk_size, dtype=chunk_dtype, device=temp_device)
@@ -141,22 +140,24 @@ class Chunk:
         cuda_memory = 0
         cpu_memory = 0
 
+        # this chunk is not closed
         if self.is_init:
-            # this chunk is not closed
             if self.chunk_temp.device.type == 'cuda':
                 cuda_memory += self.chunk_memo
             else:
                 cpu_memory += self.chunk_memo
-        else:
-            if self.in_rcache:
-                cuda_memory += self.rcb.memo_occ
 
-            if self.shard_device.type == 'cuda':
-                cuda_memory += self.shard_mem
-            elif self.shard_device.type == 'cpu':
-                cpu_memory += self.shard_mem
-            else:
-                raise NotImplementedError
+        # this chunk is on the rcache
+        if self.in_rcache:
+            cuda_memory += self.rcb.memo_occ
+
+        # calculate the occupation of the chunk shard
+        if self.shard_device.type == 'cuda':
+            cuda_memory += self.shard_memo
+        elif self.shard_device.type == 'cpu':
+            cpu_memory += self.shard_memo
+        else:
+            raise NotImplementedError
 
         return dict(cuda=cuda_memory, cpu=cpu_memory)
 
@@ -244,10 +245,10 @@ class Chunk:
     def replicate(self):
         assert not self.is_replica
 
+        self.is_replica = True
         this_shard = self.shard if self.optim_sync_flag else self.__paired_shard()
         self.__update_replica(self.rcb.payload, this_shard)
         self.__update_tensors_ptr()
-        self.is_replica = True
 
     def scatter(self):
         assert not self.rcache_fused
@@ -276,7 +277,7 @@ class Chunk:
 
         self.is_replica = False
 
-    def access_chunk(self, block: Optional[TensorBlock]):
+    def access_chunk(self, block: Optional[TensorBlock] = None):
         # sanity check
         assert not self.is_init
         assert not self.is_replica
@@ -324,7 +325,10 @@ class Chunk:
             return block
 
     def tensor_trans_state(self, tensor: torch.Tensor, tensor_state: TensorState) -> None:
-        if ts_update_sanity_check(self.tensors_info[tensor].state, tensor_state):
+        prev_state = self.tensors_info[tensor].state
+        if prev_state == tensor_state:
+            return
+        if ts_update_sanity_check(prev_state, tensor_state):
             self.__update_one_tensor_info(self.tensors_info[tensor], tensor_state)
 
     def copy_tensor_to_chunk_slice(self, tensor: torch.Tensor, data_slice: torch.Tensor) -> None:
@@ -365,7 +369,6 @@ class Chunk:
             raise NotImplementedError
 
     def get_tensors(self) -> List[torch.Tensor]:
-        assert self.is_replica
         return list(self.tensors_info.keys())
 
     def __update_replica(self, replica: torch.Tensor, shard: torch.Tensor):
@@ -428,33 +431,35 @@ class Chunk:
         return self is __o
 
     def __repr__(self, detailed: bool = True):
+        if self.is_init:
+            state = 'initialization'
+        elif self.in_rcache:
+            state = 'replicated'
+        else:
+            state = 'scattered'
+
         output = [
-            'Chunk details:\n', f'\tsize={self.chunk_size}, dtype={self.chunk_dtype}, comm_size: {self.pg_size},\n'
-            f'\tnumber_tensor={self.num_tensors}, utilized_size={self.utilized_size}, utilized_percentage={self.utilized_size / self.chunk_size:.2f}\n'
+            f'Chunk details: state -> {state}\n',
+            f'  length: {self.chunk_size}, dtype: {self.chunk_dtype}, group_size: {self.pg_size}, tensors: {self.num_tensors}\n'
+            f'  utilized size: {self.utilized_size}, utilized percentage: {100 * (self.utilized_size / self.chunk_size):.0f}%\n'
         ]
 
-        def print_tensor(tensor, prefix=''):
-            output.append('{}shape: {}, dtype: {}, device: {}\n'.format(prefix, tensor.shape, tensor.dtype,
-                                                                        tensor.device))
+        memory_info = self.memory_usage
+        output.append('  memory usage: (cuda -> {}, cpu -> {})\n'.format(memory_info['cuda'], memory_info['cpu']))
+
+        def print_tensor(name, tensor, prefix=''):
+            output.append(f'{prefix}{name}: (shape={tensor.shape}, dtype={tensor.dtype}, device={tensor.device})\n')
 
         if self.is_init:
-            output.append('\tchunk temp:\n')
-            print_tensor(tensor=self.chunk_temp, prefix='\t\t')
-
+            print_tensor(name='temp', tensor=self.chunk_temp, prefix='  ')
         if self.in_rcache:
-            output.append('\trcache block:\n')
-            print_tensor(tensor=self.rcb.payload, prefix='\t\t')
-
+            print_tensor(name='block', tensor=self.rcb.payload, prefix='  ')
         if self.shard is not None:
-            output.append('\tchunk shard:\n')
-            print_tensor(tensor=self.shard, prefix='\t\t')
-
-        memory_info = self.memory_usage
-        output.append('\tmemory usage: cuda {}, cpu {}\n'.format(memory_info['cuda'], memory_info['cpu']))
+            print_tensor(name='shard', tensor=self.shard, prefix='  ')
 
         if detailed:
-            output.append('\ttensor state monitor:\n')
+            output.append('  tensor state monitor:\n')
             for st in TensorState:
-                output.append('\t\t# of {}: {}\n'.format(st, self.tensor_state_cnter[st]))
+                output.append('    # of {}: {}\n'.format(st, self.tensor_state_cnter[st]))
 
         return ''.join(output)

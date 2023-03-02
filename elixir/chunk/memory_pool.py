@@ -1,14 +1,12 @@
 from abc import ABC
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 import torch
 from torch.autograd.profiler_util import _format_memory
 
 
-@dataclass
-class BlockRequire:
+class BlockRequire(NamedTuple):
     numel: int
     dtype: torch.dtype
 
@@ -95,7 +93,10 @@ class MemoryPool(object):
             block = PublicBlock(public_block_size, public_dtype, self.device_type)
             self.public_free_blocks.append(block)
 
-        self.public_space = self.public_free_blocks[0].memo_occ * public_block_number
+        if public_block_number <= 0:
+            self.public_space = 0
+        else:
+            self.public_space = self.public_free_blocks[0].memo_occ * public_block_number
         self.public_block_size = public_block_size
         self.public_dtype = public_dtype
 
@@ -118,8 +119,8 @@ class MemoryPool(object):
         return f'MP(public_space={_format_memory(self.public_space)}, private_space={self.private_space})'
 
     def get_private_block(self, numel: int, dtype: torch.dtype):
-        block_lsit = self.private_lookup_dict.get(BlockRequire(numel=numel, dtype=dtype))
-        return block_lsit.pop()
+        block_list = self.private_lookup_dict.get(BlockRequire(numel=numel, dtype=dtype))
+        return block_list.pop()
 
     def get_public_block(self):
         self.public_free_cnt -= 1
