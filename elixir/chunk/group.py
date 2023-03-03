@@ -85,7 +85,7 @@ class ChunkGroup(object):
             chunk = self.tensors_to_chunks[tensor]
             if chunk not in chunk_list:
                 chunk_list.append(chunk)
-        chunk_list.sort(key=lambda c: c.id)
+        chunk_list.sort(key=lambda c: c.chunk_id)
         return chunk_list
 
     def access_chunk(self, chunk: Chunk, block: Optional[TensorBlock] = None) -> bool:
