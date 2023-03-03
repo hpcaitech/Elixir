@@ -17,12 +17,9 @@ class M(nn.Module):
 
 
 def test_tf_forward_backward():
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
     model = builder()
     data, label = next(train_iter)
-
-    # model = M()
-    # data = torch.randn(4, 16)
 
     def forward_backward_fn(model, data):
         model(data).sum().backward()
@@ -31,16 +28,10 @@ def test_tf_forward_backward():
     for step_dict in tf_order:
         print(step_dict)
 
-    exit(0)
-
-    assert_dict_keys(td_order[0], ['proj1.weight'])
-    assert_dict_keys(td_order[1], ['proj1.weight', 'proj1.bias'])
-    assert_dict_keys(td_order[2], ['proj2.weight'])
-    assert_dict_keys(td_order[3], ['proj2.weight', 'proj2.bias'])
-    assert_dict_keys(td_order[4], ['proj2.weight'])
-    assert_dict_keys(td_order[5], ['proj2.weight'])
-    assert_dict_keys(td_order[6], ['proj1.weight'])
-    assert_dict_keys(td_order[7], ['proj1.weight'])
+    assert_dict_keys(tf_order[0], ['proj1.weight', 'proj1.bias'])
+    assert_dict_keys(tf_order[1], ['proj2.weight', 'proj2.bias'])
+    assert_dict_keys(tf_order[2], ['proj2.weight', 'proj2.bias'])
+    assert_dict_keys(tf_order[3], ['proj1.weight', 'proj1.bias'])
 
 
 if __name__ == '__main__':

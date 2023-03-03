@@ -7,11 +7,10 @@ from elixir.tracer.param_tracer import generate_fx_order, generate_td_order
 
 
 def test_td_forward_backward():
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
     model = builder()
     data, label = next(train_iter)
-
-    # data.requires_grad = True
+    data.requires_grad = True
 
     def forward_backward_fn(model, inp):
         model(*inp).sum().backward()
@@ -19,7 +18,6 @@ def test_td_forward_backward():
     td_order = generate_td_order(model, data, forward_backward_fn)
     for step_dict in td_order:
         print(step_dict)
-    exit(0)
 
     assert_dict_keys(td_order[0], ['proj1.weight'])
     assert_dict_keys(td_order[1], ['proj1.weight', 'proj1.bias'])
