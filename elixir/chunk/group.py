@@ -79,6 +79,15 @@ class ChunkGroup(object):
 
         return new_chunk
 
+    def tensors_to_chunks(self, tensor_list: list[torch.Tensor]):
+        chunk_list = list()
+        for tensor in tensor_list:
+            chunk = self.tensors_to_chunks[tensor]
+            if chunk not in chunk_list:
+                chunk_list.append(chunk)
+        chunk_list.sort(key=lambda c: c.id)
+        return chunk_list
+
     def access_chunk(self, chunk: Chunk, block: Optional[TensorBlock] = None) -> bool:
         self.inside_check(chunk)
         # if this chunk is accessed already, return False
