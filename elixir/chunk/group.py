@@ -5,7 +5,6 @@ import torch.distributed as dist
 
 from .chunk import Chunk
 from .memory_pool import MemoryPool, TensorBlock
-from .states import TensorState
 
 
 class ChunkGroup(object):
@@ -88,30 +87,45 @@ class ChunkGroup(object):
         chunk_list.sort(key=lambda c: c.chunk_id)
         return chunk_list
 
-    def access_chunk(self, chunk: Chunk, block: Optional[TensorBlock] = None) -> bool:
+    def rcache_enough_check(self, chunk: Chunk) -> bool:
+        if chunk.rcache_fused:
+            return True
+        # the flag of free block list
+        flag = bool(self.rcache.free_public_block)
+        return flag
+
+    def access_chunk(self, chunk: Chunk) -> bool:
         self.inside_check(chunk)
         # if this chunk is accessed already, return False
         if self.is_accessed(chunk):
             return False
 
+        if chunk.rcache_fused:
+            block = None
+        else:
+            block = self.rcache.get_public_block()
         chunk.access_chunk(block)
         self.__add_to_accset(chunk)
         return True
 
-    def release_chunk(self, chunk: Chunk) -> TensorBlock:
+    def release_chunk(self, chunk: Chunk) -> bool:
         self.inside_check()
         assert self.is_accessed(chunk)
         assert chunk.scatter_check()
 
         block = chunk.release_chunk()
+        if block:
+            self.rcache.free_public_block(block)
         self.__remove_from_accset(chunk)
-        return block
+        return True
 
-    def reduce_chunk(self, chunk: Chunk) -> Optional[TensorBlock]:
+    def reduce_chunk(self, chunk: Chunk) -> bool:
         self.inside_check()
         assert self.is_accessed(chunk)
         assert chunk.reduce_check()
 
         block = chunk.reduce_chunk()
+        if block:
+            self.rcache.free_public_block(block)
         self.__remove_from_accset(chunk)
         return block
