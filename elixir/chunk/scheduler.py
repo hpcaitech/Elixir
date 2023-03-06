@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections import deque
 from typing import Optional
 
 from .chunk import Chunk
@@ -9,56 +8,70 @@ from .memory_pool import MemoryPool, TensorBlock
 
 class ChunkScheduler(ABC):
 
-    def __init__(self, rcache: MemoryPool, group: ChunkGroup) -> None:
+    def __init__(self, group: ChunkGroup) -> None:
         super().__init__()
-        self.rcache = rcache
         self.group = group
+        self.releasable_set: Optional[set] = None
+        self.current_step = 0
 
     @abstractmethod
     def reset(self) -> None:
-        pass
+        self.releasable_set = set()
+        self.current_step = 0
 
     @abstractmethod
     def clear(self) -> None:
-        pass
+        # asure the set is empty now
+        assert not bool(self.releasable_set)
 
     @abstractmethod
-    def upload_chunk(self, chunk: Chunk, *args, **kwargs) -> bool:
-        pass
+    def topk(self, k: int) -> list[Chunk]:
+        # sanity check
+        assert len(self.releasable_set) >= k
 
     @abstractmethod
-    def offload_chunk(self, *args, **kwargs) -> Chunk:
-        pass
+    def add(self, chunk: Chunk, *args, **kwargs) -> None:
+        if chunk in self.releasable_set:
+            return
+        self.releasable_set.add(chunk)
+
+    @abstractmethod
+    def remove(self, chunk: Chunk, *args, **kwargs) -> None:
+        if chunk not in self.releasable_set:
+            return
+        self.releasable_set.remove(chunk)
 
     def step(self, *args, **kwags):
-        pass
+        self.current_step += 1
 
 
 class FIFOScheduler(ChunkScheduler):
 
     def __init__(self, rcache: MemoryPool, group: ChunkGroup) -> None:
         super().__init__(rcache, group)
-        self.accessed_queue: Optional[deque] = None
+        self.fifo_dict: Optional[dict] = None
 
     def reset(self) -> None:
-        self.accessed_queue = deque()
+        super().reset()
+        self.fifo_dict = dict()
 
     def clear(self) -> None:
-        self.accessed_queue = None
+        super().clear()
+        self.fifo_dict = None
 
-    def upload_chunk(self, chunk: Chunk, *args, **kwargs) -> bool:
-        self.accessed_queue.append(chunk)
-        return True
+    def topk(self, k: int) -> list[Chunk]:
+        super().topk(k)
+        ret = list()
+        dict_iter = iter(self.fifo_dict)
+        for _ in range(k):
+            c = next(dict_iter)
+            ret.append(c)
+        return ret
 
-    def offload_chunk(self, *args, **kwargs) -> Chunk:
-        append_list = list()
-        c = None
-        while True:
-            c = self.accessed_queue.popleft()
-            if self.group.is_accessed(c):
-                break
-            else:
-                append_list.append(c)
-        for x in append_list:
-            self.accessed_queue.append(x)
-        return c
+    def add(self, chunk: Chunk, *args, **kwargs) -> None:
+        super().add(chunk, *args, **kwargs)
+        self.fifo_dict[chunk] = True
+
+    def remove(self, chunk: Chunk, *args, **kwargs) -> None:
+        super().remove(chunk, *args, **kwargs)
+        self.fifo_dict.pop(chunk)
