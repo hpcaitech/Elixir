@@ -34,6 +34,12 @@ class TensorBlock(ABC):
     def device(self):
         return self.payload.device
 
+    def __hash__(self) -> int:
+        return self.block_id
+
+    def __eq__(self, other: object) -> bool:
+        return self.block_id == other.block_id
+
     def __repr__(self) -> str:
         return f'(id={self.block_id}, numel={self.numel}, device={self.device_type}, dtype={self.dtype}, memo={self.memo_occ})'
 

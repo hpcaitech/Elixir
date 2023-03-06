@@ -425,10 +425,10 @@ class Chunk:
                 self.__update_one_tensor_info(tensor_info, next_state)
 
     def __hash__(self) -> int:
-        return hash(id(self))
+        return self.chunk_id
 
-    def __eq__(self, __o: object) -> bool:
-        return self is __o
+    def __eq__(self, other: object) -> bool:
+        return self.chunk_id == other.chunk_id
 
     def __repr__(self, detailed: bool = True):
         if self.is_init:
