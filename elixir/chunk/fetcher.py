@@ -68,9 +68,10 @@ class ChunkFetcher(object):
             # if the rcache is not enough, just release a chunk
             if not self.group.rcache_enough_check(chunk):
                 maybe_chunk = self.scheduler.top(step=self.current_step)
-                # TODO: fix here
-                self.scheduler.remove(chunk)
-                self.group.release_chunk(chunk)
+                if maybe_chunk is None:
+                    raise RuntimeError('R cache is not enough. Try to allocate more.')
+                self.scheduler.remove(maybe_chunk)
+                self.group.release_chunk(maybe_chunk)
 
             self.group.access_chunk(chunk)
 
@@ -94,7 +95,10 @@ class ChunkFetcher(object):
 
         if not self.group.rcache_enough_check(next_chunk):
             maybe_chunk = self.scheduler.top(step=self.current_step)
-            # TODO: fix here
+            # if there is no chunk can be evicted, just return
+            if maybe_chunk is None:
+                return
+            # otherwise, release this chunk
             self.scheduler.remove(maybe_chunk)
             self.group.release_chunk(maybe_chunk)
 

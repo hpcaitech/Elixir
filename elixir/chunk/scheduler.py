@@ -25,9 +25,10 @@ class ChunkScheduler(ABC):
         assert not bool(self.releasable_set)
 
     @abstractmethod
-    def top(self, *args, **kwargs) -> list[Chunk]:
-        # sanity check
-        assert bool(self.releasable_set)
+    def top(self, *args, **kwargs) -> Optional[Chunk]:
+        # return None if the releasable set is empty
+        if not self.releasable_set:
+            return None
 
     @abstractmethod
     def add(self, chunk: Chunk, *args, **kwargs) -> None:
@@ -59,7 +60,7 @@ class FIFOScheduler(ChunkScheduler):
         super().clear()
         self.fifo_dict = None
 
-    def top(self, *args, **kwargs) -> list[Chunk]:
+    def top(self, *args, **kwargs) -> Optional[Chunk]:
         super().top(*args, **kwargs)
         dict_iter = iter(self.fifo_dict)
         ret = next(dict_iter)
