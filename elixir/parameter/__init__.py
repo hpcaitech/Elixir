@@ -48,29 +48,42 @@ def to_outplace_tensor(t):
 
 class OutplaceTensor(torch.Tensor):
 
+    def __new__(cls, tensor):
+        rt = torch.Tensor._make_subclass(cls, tensor, tensor.requires_grad)
+        return rt
+
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
-
+        # in order to trigger pre-op hook in the forward of checkpoint module
+        # we have to capture the `backward` function
+        # and make sure that it does not in `torch._C.DisableTorchFunction()` context
+        if func is torch.Tensor.backward:
+            assert len(args) == 1    # only has 1 paramter
+            backward_tensor = torch.Tensor(args[0])
+            tensor_kwargs = {k: torch.Tensor(v) if torch.is_tensor(v) else v for k, v in kwargs.items()}
+            return backward_tensor.backward(**tensor_kwargs)
+        # return a tensor if the output needs to be a torch.Tensor (such as Tensor.data.__get__)
         if is_tensor_output(func):
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret
+
         # debug inplace operations
         if debug_flag:
             if func.__name__.endswith('_'):
                 print(f'found inplace operation {func.__name__}')
+
         # replace the in-place function
         if func in inpalce_mapping:
             func = inpalce_mapping[func]
-
+        # set the 'inplace' kwargs to False
         if 'inplace' in kwargs:
             kwargs['inplace'] = False
 
         with torch._C.DisableTorchFunction():
             ret = func(*args, **kwargs)
-
         if not isinstance(ret, tuple):
             ret = (ret,)
 

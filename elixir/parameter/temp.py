@@ -158,8 +158,9 @@ def transform(m: nn.Module) -> nn.Module:
 
 def main():
     x = torch.randn(4, 4)
-    z = MyParameter(x)
-    print(isinstance(z, nn.Parameter))
+    z = OutplaceTensor(x)
+    print(z.data)
+    print(type(z.data))
 
 
 if __name__ == '__main__':
