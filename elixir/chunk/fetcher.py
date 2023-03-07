@@ -27,11 +27,11 @@ class ChunkFetcher(object):
     def clear(self):
         self.scheduler.clear()
 
-    def to_compute(self, chunks: list[Chunk]):
+    def trans_to_compute(self, chunks: list[Chunk]):
         for chunk in chunks:
             self.scheduler.remove(chunk)
 
-    def to_hold(self, chunks: list[Chunk]):
+    def trans_to_hold(self, chunks: list[Chunk]):
         for chunk in chunks:
             if chunk.scatter_check:
                 self.scheduler.add(chunk)
