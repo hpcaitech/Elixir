@@ -5,13 +5,14 @@ import torch
 from .chunk import Chunk
 from .group import ChunkGroup
 from .scheduler import ChunkScheduler
+from .states import TensorState
 
 
 class ChunkFetcher(object):
 
-    def __init__(self, scheduler: ChunkScheduler, overlap: bool = False) -> None:
+    def __init__(self, scheduler: ChunkScheduler, group: ChunkGroup, overlap: bool = False) -> None:
         self.scheduler: ChunkScheduler = scheduler
-        self.group: ChunkGroup = scheduler.group
+        self.group: ChunkGroup = group
         self.current_step = 0
 
         self.overlap_flag = overlap
@@ -27,11 +28,24 @@ class ChunkFetcher(object):
     def clear(self):
         self.scheduler.clear()
 
-    def trans_to_compute(self, chunks: list[Chunk]):
+    def trans_to_compute(self, tensors: list[torch.Tensor]):
+        # update tensor states
+        for t in tensors:
+            self.group.tensor_trans_state(t, TensorState.COMPUTE)
+        # chunk operations
+        chunks = self.group.tensors_to_chunks(tensors)
         for chunk in chunks:
             self.scheduler.remove(chunk)
+        return chunks
 
-    def trans_to_hold(self, chunks: list[Chunk]):
+    def trans_to_hold(self, tensors: list[torch.Tensor], phase: str):
+        assert phase in ('f', 'b')
+        next_state = TensorState.HOLD if phase == 'f' else TensorState.HOLD_AFTER_BWD
+        # update tensor states
+        for t in tensors:
+            self.group.tensor_trans_state(t, next_state)
+        # chunk operations
+        chunks = self.group.tensors_to_chunks(tensors)
         for chunk in chunks:
             if chunk.scatter_check:
                 self.scheduler.add(chunk)
