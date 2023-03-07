@@ -439,7 +439,7 @@ class Chunk:
             state = 'scattered'
 
         output = [
-            f'Chunk details: state -> {state}\n',
+            f'Chunk {self.chunk_id} details: state -> {state}\n',
             f'  length: {self.chunk_size}, dtype: {self.chunk_dtype}, group_size: {self.pg_size}, tensors: {self.num_tensors}\n'
             f'  utilized size: {self.utilized_size}, utilized percentage: {100 * (self.utilized_size / self.chunk_size):.0f}%\n'
         ]

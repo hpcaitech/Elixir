@@ -134,7 +134,7 @@ class ChunkGroup(object):
         if block:
             self.rcache.free_public_block(block)
         self.__remove_from_accset(chunk)
-        return block
+        return True
 
     def tensor_trans_state(self, tensor: torch.Tensor, state: TensorState):
         chunk = self.ten_to_chunk.get(tensor)
