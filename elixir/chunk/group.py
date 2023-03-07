@@ -2,9 +2,11 @@ from typing import Dict, Optional
 
 import torch
 import torch.distributed as dist
+from torch.distributed import ProcessGroup
 
 from .chunk import Chunk
 from .memory_pool import MemoryPool, TensorBlock
+from .states import TensorState
 
 
 class ChunkGroup(object):
@@ -51,7 +53,7 @@ class ChunkGroup(object):
                        tensor_list: list[torch.Tensor],
                        chunk_size: int,
                        chunk_dtype: torch.dtype,
-                       process_group: dist.ProcessGrouop,
+                       process_group: ProcessGroup,
                        chunk_config: Optional[Dict] = None) -> Chunk:
 
         if chunk_config is None:
@@ -62,16 +64,20 @@ class ChunkGroup(object):
                           chunk_dtype=chunk_dtype,
                           process_group=process_group,
                           **chunk_config)
-
+        # sanity check
+        if not new_chunk.rcache_fused:
+            assert new_chunk.chunk_size == self.rcache.public_block_size
+            assert new_chunk.chunk_dtype == self.rcache.public_dtype
+        # append tensors
         for t in tensor_list:
             new_chunk.append_tensor(t)
         new_chunk.close_chunk()
-
+        # add the new chunk to the set of allocated chunks
         if new_chunk.rcache_fused:
             self.fused_chunks.add(new_chunk)
         else:
             self.float_chunks.add(new_chunk)
-
+        # add the new chunk to the mapping
         for t in tensor_list:
             assert t not in self.ten_to_chunk
             self.ten_to_chunk[t] = new_chunk
@@ -81,7 +87,7 @@ class ChunkGroup(object):
     def tensors_to_chunks(self, tensor_list: list[torch.Tensor]):
         chunk_list = list()
         for tensor in tensor_list:
-            chunk = self.tensors_to_chunks[tensor]
+            chunk = self.ten_to_chunk.get(tensor)
             if chunk not in chunk_list:
                 chunk_list.append(chunk)
         chunk_list.sort(key=lambda c: c.chunk_id)
@@ -91,7 +97,7 @@ class ChunkGroup(object):
         if chunk.rcache_fused:
             return True
         # the flag of free block list
-        flag = bool(self.rcache.free_public_block)
+        flag = bool(self.rcache.public_free_blocks)
         return flag
 
     def access_chunk(self, chunk: Chunk) -> bool:
@@ -109,9 +115,9 @@ class ChunkGroup(object):
         return True
 
     def release_chunk(self, chunk: Chunk) -> bool:
-        self.inside_check()
+        self.inside_check(chunk)
         assert self.is_accessed(chunk)
-        assert chunk.scatter_check()
+        assert chunk.scatter_check
 
         block = chunk.release_chunk()
         if block:
@@ -120,12 +126,16 @@ class ChunkGroup(object):
         return True
 
     def reduce_chunk(self, chunk: Chunk) -> bool:
-        self.inside_check()
+        self.inside_check(chunk)
         assert self.is_accessed(chunk)
-        assert chunk.reduce_check()
+        assert chunk.reduce_check
 
         block = chunk.reduce_chunk()
         if block:
             self.rcache.free_public_block(block)
         self.__remove_from_accset(chunk)
         return block
+
+    def tensor_trans_state(self, tensor: torch.Tensor, state: TensorState):
+        chunk = self.ten_to_chunk.get(tensor)
+        chunk.tensor_trans_state(tensor, state)
