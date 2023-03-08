@@ -7,7 +7,7 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from elixir import init_distributed
+from elixir import init_distributed, seed_all
 from elixir.hook import hook_transform
 
 
@@ -15,10 +15,15 @@ def exam_chunk_fetcher(nproc, group):
     builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
     torch_model = builder().cuda()
     test_model = copy.deepcopy(torch_model)
-    data, label = next(train_iter)
 
-    hook_model = hook_transform(test_model)
-    exit(0)
+    rank = dist.get_rank(group)
+    # get different data
+    seed_all(1001 + rank)
+    data, label = next(train_iter)
+    data = data.cuda()
+
+    hook_model = hook_transform(test_model, group)
+    hook_model(data).sum().backward()
 
 
 def run_dist(rank, world_size):

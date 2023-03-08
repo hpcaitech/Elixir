@@ -34,7 +34,6 @@ def hook_transform(model: nn.Module, process_group: dist.ProcessGroupGloo):
 
     private_list = list()
     for param in model.parameters():
-        param.__class__ = HookParam
         private_list.append(BlockRequire(param.numel(), param.dtype))
 
     mp = MemoryPool('cuda')
@@ -51,12 +50,14 @@ def hook_transform(model: nn.Module, process_group: dist.ProcessGroupGloo):
     HookParam.attach_fetcher(fetcher)
     for param in model.parameters():
         param.register_hook(partial(grad_handler, param=param, fetcher=fetcher))
+        param.__class__ = HookParam
     # set inplace to False for all modules
     for module in model.modules():
         if hasattr(module, 'inplace'):
             module.inplace = False
 
     def transform_input(self_module, inputs):
+        fetcher.reset()
         input_list = list()
         for t in inputs:
             if isinstance(t, torch.Tensor):

@@ -64,7 +64,7 @@ class ChunkFetcher(object):
         return self.group.tensors_to_chunks(tensors)
 
     def filter_chunks(self, chunks: list[Chunk]):
-        return filter(lambda c: not self.group.is_accessed(c), chunks)
+        return list(filter(lambda c: not self.group.is_accessed(c), chunks))
 
     def fetch_chunks(self, chunks: list[Chunk]):
         # make step + 1
