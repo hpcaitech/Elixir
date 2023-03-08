@@ -91,7 +91,10 @@ class ChunkFetcher(object):
 
             self.group.access_chunk(chunk)
 
-    def reduce_chunk(self, chunk: Chunk):
+    def reduce_chunk(self, chunk: Chunk) -> bool:
+        if not chunk.reduce_check:
+            return False
+
         if self.overlap_flag:
             context = torch.cuda.stream
             self.reducing_chunk = chunk
@@ -101,6 +104,8 @@ class ChunkFetcher(object):
         self.scheduler.remove(chunk)
         with context(self.reduce_stream):
             self.group.reduce_chunk(chunk)
+
+        return True
 
     def prefetch(self, chunks: list[Chunk]):
         # TODO: this instruction

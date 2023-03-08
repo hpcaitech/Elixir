@@ -1,9 +1,7 @@
 from collections import OrderedDict
-from copy import copy
 
 import torch
 import torch.nn as nn
-from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
 from elixir.parameter import OutplaceTensor, is_tensor_output, to_outplace_tensor

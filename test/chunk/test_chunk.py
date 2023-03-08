@@ -59,7 +59,6 @@ def exam_chunk_functions(nproc, group):
     check_tensors()
 
     norm = block.payload.float().norm(2)**2
-    block.payload /= nproc
     chunk.reduce_chunk()
     assert chunk.is_replica is False
     assert chunk.tensor_state_cnter[TensorState.HOLD] == 4

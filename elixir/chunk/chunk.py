@@ -266,6 +266,7 @@ class Chunk:
         self.__remove_tensors_ptr()
         buffer = self.rcb.payload[self.shard_begin:self.shard_end]
         if self.pg_size > 1:
+            self.rcb.payload /= self.pg_size
             input_list = list(torch.chunk(self.rcb.payload, chunks=self.pg_size, dim=0))
             dist.reduce_scatter(buffer, input_list, group=self.torch_pg)
         self.__update_shard(self.rcb.payload, self.shard)
