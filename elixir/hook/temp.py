@@ -34,7 +34,8 @@ def hook_transform(model: nn.Module, process_group: dist.ProcessGroupGloo):
 
     private_list = list()
     for param in model.parameters():
-        private_list.append(BlockRequire(param.numel(), param.dtype))
+        block_size = to_divide(param.numel(), pg_size)
+        private_list.append(BlockRequire(block_size, param.dtype))
 
     mp = MemoryPool('cuda')
     mp.allocate(private_block_list=private_list)
@@ -67,4 +68,4 @@ def hook_transform(model: nn.Module, process_group: dist.ProcessGroupGloo):
 
     model.register_forward_pre_hook(transform_input)
 
-    return model
+    return model, cg
