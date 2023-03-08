@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-from elixir.parameter import FakeTensor, OutplaceTensor, is_tensor_output, to_outplace_tensor
+from elixir.parameter import FakeTensor, OutplaceTensor, is_no_hook_op, to_outplace_tensor
 
 
 class PreFwdPostBwd(torch.autograd.Function):
@@ -57,7 +57,7 @@ class MyParameter(OutplaceTensor, nn.Parameter):
         if kwargs is None:
             kwargs = {}
 
-        if is_tensor_output(func):
+        if is_no_hook_op(func):
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret

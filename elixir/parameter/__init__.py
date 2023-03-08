@@ -3,7 +3,9 @@ from torch.utils._pytree import tree_map
 
 debug_flag = False
 
-white_list = [torch.Tensor.__getitem__]
+white_list = {torch.Tensor.__getitem__}
+
+fake_allowed = {torch.Tensor.numel, torch.Tensor.size, torch.Tensor.stride, torch.Tensor.storage_offset}
 
 inpalce_mapping = {
     torch.Tensor.add_: torch.Tensor.add,
@@ -13,8 +15,10 @@ inpalce_mapping = {
 }
 
 
-def is_tensor_output(func) -> bool:
+def is_no_hook_op(func) -> bool:
     if func.__name__.startswith('__') and func not in white_list:
+        return True
+    if func in fake_allowed:
         return True
     return False
 
@@ -65,7 +69,7 @@ class OutplaceTensor(torch.Tensor):
             tensor_kwargs = {k: torch.Tensor(v) if torch.is_tensor(v) else v for k, v in kwargs.items()}
             return backward_tensor.backward(**tensor_kwargs)
         # return a tensor if the output needs to be a torch.Tensor (such as Tensor.data.__get__)
-        if is_tensor_output(func):
+        if is_no_hook_op(func):
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret

@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils._pytree import tree_map
 
 from elixir import gpu_dev, no_dispatch, normalize_tuple
-from elixir.parameter import is_tensor_output
+from elixir.parameter import is_no_hook_op
 from elixir.tracer.utils import meta_copy
 
 
@@ -86,7 +86,7 @@ class Record(FakeCudaTensor, nn.Parameter):
         if kwargs is None:
             kwargs = {}
 
-        if is_tensor_output(func):
+        if is_no_hook_op(func):
             with torch._C.DisableTorchFunction():
                 ret = func(*args, **kwargs)
             return ret
