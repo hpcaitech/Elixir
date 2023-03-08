@@ -11,12 +11,12 @@ class ChunkScheduler(ABC):
     def __init__(self) -> None:
         super().__init__()
         self.releasable_set: Optional[set] = None
-        self.current_step = 0
+        self.current_step = -1
 
     @abstractmethod
     def reset(self) -> None:
         self.releasable_set = set()
-        self.current_step = 0
+        self.current_step = -1
 
     @abstractmethod
     def clear(self) -> None:

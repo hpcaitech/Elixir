@@ -1,6 +1,6 @@
 import torch
 
-from elixir.chunk import ChunkFetcher, TensorState
+from elixir.chunk import ChunkFetcher
 
 
 def prefwd_postbwd_function(fetcher: ChunkFetcher):
@@ -30,6 +30,7 @@ def postfwd_prebwd_function(fetcher: ChunkFetcher):
         def forward(ctx, params, *args):
             ctx.params = params
             fetcher.trans_to_hold(params, phase='f')
+            return args
 
         @staticmethod
         def backward(ctx, *grads):

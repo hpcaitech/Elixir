@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-from elixir.parameter import FakeTensor, OutplaceTensor, is_tensor_output, to_outplace_tensor
+from elixir.parameter import OutplaceTensor, is_tensor_output, to_outplace_tensor
 
 from .functions import postfwd_prebwd_function, prefwd_postbwd_function
 

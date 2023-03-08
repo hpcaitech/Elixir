@@ -33,14 +33,14 @@ class ChunkGroup(object):
         else:
             self.accessed_float_chunks.remove(chunk)
 
-    def inside_check(self, chunk: Chunk):
+    def inside_check(self, chunk: Chunk) -> None:
         # check whether the chunk is in this ChunkGroup
         if chunk.rcache_fused:
             assert chunk in self.fused_chunks
         else:
             assert chunk in self.float_chunks
 
-    def is_accessed(self, chunk: Chunk):
+    def is_accessed(self, chunk: Chunk) -> bool:
         # sanity check
         self.inside_check(chunk)
 
@@ -84,7 +84,7 @@ class ChunkGroup(object):
 
         return new_chunk
 
-    def tensors_to_chunks(self, tensor_list: list[torch.Tensor]):
+    def tensors_to_chunks(self, tensor_list: list[torch.Tensor]) -> list[Chunk]:
         chunk_list = list()
         for tensor in tensor_list:
             chunk = self.ten_to_chunk.get(tensor)

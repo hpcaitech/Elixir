@@ -13,7 +13,7 @@ class ChunkFetcher(object):
     def __init__(self, scheduler: ChunkScheduler, group: ChunkGroup, overlap: bool = False) -> None:
         self.scheduler: ChunkScheduler = scheduler
         self.group: ChunkGroup = group
-        self.current_step = 0
+        self.current_step = -1
 
         self.overlap_flag = overlap
         self.fetching_chunk = None
@@ -23,7 +23,7 @@ class ChunkFetcher(object):
 
     def reset(self):
         self.scheduler.reset()
-        self.current_step = 0
+        self.current_step = -1
 
     def clear(self):
         self.scheduler.clear()
@@ -67,6 +67,8 @@ class ChunkFetcher(object):
         return filter(lambda c: not self.group.is_accessed(c), chunks)
 
     def fetch_chunks(self, chunks: list[Chunk]):
+        # make step + 1
+        self.step()
         # wait async prefetch
         if self.fetching_chunk is not None and self.fetching_chunk in chunks:
             self.wait_prefetch()
@@ -81,7 +83,7 @@ class ChunkFetcher(object):
         for chunk in chunks:
             # if the rcache is not enough, just release a chunk
             if not self.group.rcache_enough_check(chunk):
-                maybe_chunk = self.scheduler.top(step=self.current_step)
+                maybe_chunk = self.scheduler.top()
                 if maybe_chunk is None:
                     raise RuntimeError('R cache is not enough. Try to allocate more.')
                 self.scheduler.remove(maybe_chunk)
@@ -108,7 +110,7 @@ class ChunkFetcher(object):
             return
 
         if not self.group.rcache_enough_check(next_chunk):
-            maybe_chunk = self.scheduler.top(step=self.current_step)
+            maybe_chunk = self.scheduler.top()
             # if there is no chunk can be evicted, just return
             if maybe_chunk is None:
                 return
@@ -119,3 +121,7 @@ class ChunkFetcher(object):
         self.fetching_chunk = next_chunk
         with torch.cuda.stream(self.prefetch_stream):
             self.group.access_chunk(next_chunk)
+
+    def step(self):
+        self.scheduler.step()
+        self.current_step += 1
