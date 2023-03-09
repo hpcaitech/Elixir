@@ -33,6 +33,14 @@ class ChunkGroup(object):
         else:
             self.accessed_float_chunks.remove(chunk)
 
+    def __check_new_float_chunk(self, size: int, dtype: torch.dtype):
+        # if the public space is 0, there is no access operations
+        if self.rcache.public_space == 0:
+            return
+        # otherwise, check its size and dtype
+        assert size == self.rcache.public_block_size
+        assert dtype == self.rcache.public_dtype
+
     def inside_check(self, chunk: Chunk) -> None:
         # check whether the chunk is in this ChunkGroup
         if chunk.rcache_fused:
@@ -66,8 +74,7 @@ class ChunkGroup(object):
                           **chunk_config)
         # sanity check
         if not new_chunk.rcache_fused:
-            assert new_chunk.chunk_size == self.rcache.public_block_size
-            assert new_chunk.chunk_dtype == self.rcache.public_dtype
+            self.__check_new_float_chunk(chunk_size, chunk_dtype)
         # append tensors
         for t in tensor_list:
             new_chunk.append_tensor(t)
