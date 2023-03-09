@@ -8,10 +8,10 @@ from .result import SearchResult
 from .utils import get_multi_used_params, to_divide
 
 
-def tests_sa(m: nn.Module,
-             group_size: int,
-             split_number: int = 10,
-             test_dtype: torch.dtype = torch.float) -> SearchResult:
+def simple_sa(m: nn.Module,
+              group_size: int,
+              split_number: int = 10,
+              test_dtype: torch.dtype = torch.float) -> SearchResult:
 
     def tensor_trans(t: torch.Tensor):
         # to meta
@@ -38,30 +38,32 @@ def tests_sa(m: nn.Module,
         if param not in private_params:
             public_params.append(param)
 
-    number_public = len(public_params)
-    split_number = min(number_public, split_number)
-    average_size = number_public // split_number
+    len_public = len(public_params)
+    split_number = min(len_public, split_number)
+    average_size = len_public // split_number
+    left_size = len_public % split_number
+
+    # set the size of each segment
+    pack_size_list = [average_size] * split_number
+    for i in range(split_number):
+        if left_size > 0:
+            pack_size_list[i] += 1
+        left_size -= 1
 
     # split public parameters
     for i in range(split_number):
-        number = average_size
-        if i == split_number - 1 and len(public_params) > average_size:
-            number = len(public_params)
-
-        split_list = list()
-        for _ in range(number):
+        p_list = list()
+        for _ in range(pack_size_list[i]):
             p = public_params.pop(0)
-            split_list.append(p)
-        public_groups.append(split_list)
+            p_list.append(p)
+        public_groups.append(p_list)
     assert len(public_params) == 0
     del public_params
 
     # calculate the maximum summarized size
     max_sum_size = 0
     for p_list in public_groups:
-        sum_size = 0
-        for p in p_list:
-            sum_size += p.numel() * p.element_size()
+        sum_size = sum([p.numel() for p in p_list])
         max_sum_size = max(max_sum_size, sum_size)
     max_sum_size = to_divide(max_sum_size, group_size)
 
