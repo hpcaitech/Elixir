@@ -2,10 +2,8 @@ from contextlib import nullcontext
 
 import torch
 
-from .chunk import Chunk
-from .group import ChunkGroup
+from .core import Chunk, ChunkGroup, TensorState
 from .scheduler import ChunkScheduler
-from .states import TensorState
 
 
 class ChunkFetcher(object):

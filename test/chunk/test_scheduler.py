@@ -6,7 +6,8 @@ import torch
 import torch.distributed as dist
 
 from elixir import init_distributed
-from elixir.chunk import Chunk, FIFOScheduler, MemoryPool
+from elixir.chunk import Chunk, MemoryPool
+from elixir.chunk.scheduler import FIFOScheduler
 
 
 def exam_fifo(nproc, group):

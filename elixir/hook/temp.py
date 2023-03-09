@@ -4,7 +4,8 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 
-from elixir.chunk import BlockRequire, ChunkFetcher, ChunkGroup, FIFOScheduler, MemoryPool, TensorState
+from elixir.chunk import BlockRequire, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
+from elixir.chunk.scheduler import FIFOScheduler
 from elixir.parameter import OutplaceTensor
 
 from .parameter import HookParam
