@@ -428,6 +428,9 @@ class Chunk:
     def __hash__(self) -> int:
         return self.chunk_id
 
+    def __lt__(self, other: object) -> bool:
+        return self.chunk_id < other.chunk_id
+
     def __eq__(self, other: object) -> bool:
         return self.chunk_id == other.chunk_id
 
