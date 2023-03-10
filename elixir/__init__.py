@@ -6,6 +6,7 @@ from functools import cache
 import numpy as np
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 
 from . import meta_registrations
 
@@ -61,3 +62,25 @@ def init_distributed():
         torch.cuda.set_device(local_rank)
 
     seed_all(1024)
+
+
+def get_model_size(model: nn.Module):
+    total_numel = 0
+    for module in model.modules():
+        for p in module.parameters(recurse=False):
+            total_numel += p.numel()
+    return total_numel
+
+
+def model_size_formatter(numel: int) -> str:
+    GB_SIZE = 10**9
+    MB_SIZE = 10**6
+    KB_SIZE = 10**3
+    if numel >= GB_SIZE:
+        return f'{numel / GB_SIZE:.1f}B'
+    elif numel >= MB_SIZE:
+        return f'{numel / MB_SIZE:.1f}M'
+    elif numel >= KB_SIZE:
+        return f'{numel / KB_SIZE:.1f}K'
+    else:
+        return str(numel)
