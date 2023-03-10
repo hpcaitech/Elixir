@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-import timm.models as tm
+import timm.models as tmm
 import torch
 import torch.nn.functional as F
 from torch.testing import assert_close
@@ -38,10 +38,32 @@ def test_model(builder, kwargs):
 def test_timm_models():
     seed_all(1001, cuda_deterministic=True)
     model_list = [
-        tm.resnest.resnest50d, tm.beit.beit_base_patch16_224, tm.cait.cait_s24_224, tm.convmixer.convmixer_768_32,
-        tm.efficientnet.efficientnetv2_m, tm.resmlp_12_224, tm.vision_transformer.vit_base_patch16_224,
-        tm.deit_base_distilled_patch16_224, tm.convnext.convnext_base, tm.vgg.vgg11, tm.dpn.dpn68,
-        tm.densenet.densenet121, tm.rexnet.rexnet_100, tm.swin_transformer.swin_base_patch4_window7_224
+        tmm.beit_base_patch16_224,
+        tmm.beitv2_base_patch16_224,
+        tmm.cait_s24_224,
+        tmm.coat_lite_mini,
+        tmm.convit_base,
+        tmm.deit3_base_patch16_224,
+        tmm.dm_nfnet_f0,
+        tmm.eca_nfnet_l0,
+        tmm.efficientformer_l1,
+        tmm.ese_vovnet19b_dw,
+        tmm.gmixer_12_224,
+        tmm.gmlp_b16_224,
+        tmm.hardcorenas_a,
+        tmm.hrnet_w18_small,
+        tmm.inception_v3,
+        tmm.mixer_b16_224,
+        tmm.nf_ecaresnet101,
+        tmm.nf_regnet_b0,
+    # tmm.pit_b_224,  # pretrained only
+        tmm.regnetv_040,
+        tmm.skresnet18,
+        tmm.swin_base_patch4_window7_224,
+        tmm.tnt_b_patch16_224,
+        tmm.vgg11,
+        tmm.vit_base_patch16_18x2_224,
+        tmm.wide_resnet50_2,
     ]
 
     for builder in model_list:

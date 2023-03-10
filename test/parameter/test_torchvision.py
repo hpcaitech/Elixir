@@ -25,16 +25,29 @@ def test_model(builder, kwargs):
 
 def test_torchvision_models():
     seed_all(1001, cuda_deterministic=True)
+
     model_list = [
-        tm.vgg11, tm.resnet18, tm.densenet121, tm.mobilenet_v3_small, tm.resnext50_32x4d, tm.wide_resnet50_2,
-        tm.regnet_x_16gf, tm.mnasnet0_5, tm.efficientnet_b0, tm.vit_b_16, tm.convnext_small
+        tm.alexnet,
+        tm.convnext_base,
+        tm.densenet121,
+        tm.efficientnet_v2_s,
+        tm.googlenet,    # output bad case
+        tm.inception_v3,    # bad case
+        tm.mobilenet_v2,
+        tm.mobilenet_v3_small,
+        tm.mnasnet0_5,
+        tm.resnet18,
+        tm.regnet_x_16gf,
+        tm.resnext50_32x4d,
+        tm.shufflenet_v2_x0_5,
+        tm.squeezenet1_0,
+        tm.swin_s,    # fx bad case
+        tm.vgg11,
+        tm.vit_b_16,
+        tm.wide_resnet50_2,
     ]
-    rand_list = [tm.efficientnet_b0, tm.convnext_small]
     for builder in model_list:
         kwargs = {}
-        if builder in rand_list:
-            kwargs['stochastic_depth_prob'] = 0
-
         flag = '√'
         try:
             test_model(builder, kwargs)
