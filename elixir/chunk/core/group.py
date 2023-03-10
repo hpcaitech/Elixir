@@ -57,6 +57,38 @@ class ChunkGroup(object):
         else:
             return (chunk in self.accessed_float_chunks)
 
+    def open_chunk(self,
+                   chunk_size: int,
+                   chunk_dtype: torch.dtype,
+                   process_group: ProcessGroup,
+                   chunk_config: Optional[Dict] = None) -> Chunk:
+        if chunk_config is None:
+            chunk_config = {}
+
+        chunk = Chunk(rcache=self.rcache,
+                      chunk_size=chunk_size,
+                      chunk_dtype=chunk_dtype,
+                      process_group=process_group,
+                      **chunk_config)
+        # sanity check
+        if not chunk.rcache_fused:
+            self.__check_new_float_chunk(chunk_size, chunk_dtype)
+
+        return chunk
+
+    def close_chunk(self, chunk: Chunk) -> bool:
+        chunk.close_chunk()
+        # add the new chunk to the set of allocated chunks
+        if chunk.rcache_fused:
+            self.fused_chunks.add(chunk)
+        else:
+            self.float_chunks.add(chunk)
+        # add the new chunk to the mapping
+        for t in chunk.get_tensors():
+            assert t not in self.ten_to_chunk
+            self.ten_to_chunk[t] = chunk
+        return True
+
     def allocate_chunk(self,
                        tensor_list: list[torch.Tensor],
                        chunk_size: int,
@@ -64,32 +96,13 @@ class ChunkGroup(object):
                        process_group: ProcessGroup,
                        chunk_config: Optional[Dict] = None) -> Chunk:
 
-        if chunk_config is None:
-            chunk_config = {}
-
-        new_chunk = Chunk(rcache=self.rcache,
-                          chunk_size=chunk_size,
-                          chunk_dtype=chunk_dtype,
-                          process_group=process_group,
-                          **chunk_config)
-        # sanity check
-        if not new_chunk.rcache_fused:
-            self.__check_new_float_chunk(chunk_size, chunk_dtype)
+        chunk = self.open_chunk(chunk_size, chunk_dtype, process_group, chunk_config)
         # append tensors
         for t in tensor_list:
-            new_chunk.append_tensor(t)
-        new_chunk.close_chunk()
-        # add the new chunk to the set of allocated chunks
-        if new_chunk.rcache_fused:
-            self.fused_chunks.add(new_chunk)
-        else:
-            self.float_chunks.add(new_chunk)
-        # add the new chunk to the mapping
-        for t in tensor_list:
-            assert t not in self.ten_to_chunk
-            self.ten_to_chunk[t] = new_chunk
+            chunk.append_tensor(t)
+        self.close_chunk(chunk)
 
-        return new_chunk
+        return chunk
 
     def tensors_to_chunks(self, tensor_list: list[torch.Tensor]) -> list[Chunk]:
         chunk_list = list()
