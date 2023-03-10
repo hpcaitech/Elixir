@@ -25,7 +25,7 @@ class MicroIterator(TestIterator):
 class MacroIterator(TestIterator):
 
     def generate(self):
-        input_ids = torch.randint(low=0, hight=MACRO_VS, size=(MACRO_BS, MACRO_SL))
+        input_ids = torch.randint(low=0, high=MACRO_VS, size=(MACRO_BS, MACRO_SL))
         attn_mask = torch.ones_like(input_ids)
         return input_ids, attn_mask
 
