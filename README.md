@@ -14,4 +14,4 @@ It tells you the CUDA memory occupation of parameters, gradient and maximum size
 Moreover, it is an efficient and fast tool which enables quickly profiling OPT-175B model on a single GPU.
 You can try it by yourself with the file `activation.py` in the directory `example`.
 
-(I think you should have at least 16GB CUDA memory to run the OPT-175B example)
+(I think you should have at least 16GB CUDA memory to run the OPT-175B example but that doesn't matter. Just try it first.)
