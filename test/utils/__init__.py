@@ -1,4 +1,4 @@
-from . import mlp, resnet, small
+from . import gpt, mlp, resnet, small
 from .registry import TEST_MODELS
 
 

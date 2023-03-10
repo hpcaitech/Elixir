@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_registry():
     from test.utils.registry import TEST_MODELS
     for name, construct_func in TEST_MODELS:
