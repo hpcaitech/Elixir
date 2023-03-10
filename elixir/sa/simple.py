@@ -20,7 +20,8 @@ def simple_sa(m: nn.Module,
         if t.is_floating_point():
             meta_t = meta_t.to(dtype=test_dtype)
         # pack it if t is a parameter
-        if isinstance(t, nn.Parameter):
+        # we should filter parameters with no grad
+        if isinstance(t, nn.Parameter) and t.requires_grad:
             meta_t = nn.Parameter(meta_t)
         return meta_t
 
