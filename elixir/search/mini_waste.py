@@ -18,12 +18,12 @@ def is_leaf_module(m: torch.nn.Module) -> bool:
             and not isinstance(m, torch.nn.Sequential))
 
 
-def minimum_waste_sa(m: nn.Module,
-                     group_size: int,
-                     min_chunk_occ_mb: float = 32,
-                     max_chunk_occ_mb: float = 96,
-                     test_interval: int = 1024,
-                     unified_dtype: torch.dtype = torch.float) -> SearchResult:
+def minimum_waste_search(m: nn.Module,
+                         group_size: int,
+                         min_chunk_occ_mb: float = 32,
+                         max_chunk_occ_mb: float = 96,
+                         test_interval: int = 1024,
+                         unified_dtype: torch.dtype = torch.float) -> SearchResult:
 
     # transform unit first
     element_size = dtype_to_es.get(unified_dtype)

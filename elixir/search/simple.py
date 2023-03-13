@@ -11,11 +11,11 @@ from .result import SearchResult
 from .utils import get_multi_used_params, to_divide, to_meta_tensor
 
 
-def simple_sa(
+def simple_search(
     m: nn.Module,
     group_size: int,
     split_number: int = 10,
-    allocate_factor: float = 0.75,
+    allocate_factor: float = 0.6,
     unified_dtype: torch.dtype = torch.float,
     shard_device: torch.device = torch.device('cpu')) -> SearchResult:
 
@@ -77,7 +77,8 @@ def simple_sa(
 
     for p_list in public_groups:
         name_list = [param_to_name[p] for p in p_list]
-        init_dict = dict(name_list=name_list, chunk_size=max_sum_size, chunk_dtype=unified_dtype, kwargs=None)
+        chunk_kwargs = dict(shard_device=shard_device)
+        init_dict = dict(name_list=name_list, chunk_size=max_sum_size, chunk_dtype=unified_dtype, kwargs=chunk_kwargs)
         config_list.append(init_dict)
 
     # allocate a memory pool

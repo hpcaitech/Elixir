@@ -1,13 +1,13 @@
 from copy import deepcopy
 from test.utils import TEST_MODELS
 
-from elixir.sa import simple_sa
+from elixir.search import simple_search
 
 
-def test_simple_sa():
+def test_simple_search():
     builder, *_ = TEST_MODELS.get_func('small')()
     model = builder()
-    sr = simple_sa(model, 1, split_number=5)
+    sr = simple_search(model, 1, split_number=5)
 
     config_list = deepcopy(sr.chunk_config_list)
 
@@ -26,4 +26,4 @@ def test_simple_sa():
 
 
 if __name__ == '__main__':
-    test_simple_sa()
+    test_simple_search()
