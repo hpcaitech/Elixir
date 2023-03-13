@@ -58,6 +58,9 @@ class ChunkFetcher(object):
         torch.cuda.current_stream().wait_stream(self.reduce_stream)
         self.reducing_chunk = None
 
+    def get_one_chunk(self, tensor: torch.Tensor) -> Chunk:
+        return self.group.ten_to_chunk.get(tensor)
+
     def get_chunks(self, tensors: list[torch.Tensor]) -> list[Chunk]:
         return self.group.tensors_to_chunks(tensors)
 
@@ -71,9 +74,14 @@ class ChunkFetcher(object):
         if self.fetching_chunk is not None and self.fetching_chunk in chunks:
             self.wait_prefetch()
         scattered = self.filter_chunks(chunks)
+
+        # sanity check: upload should wait for prefetch
+        if self.fetching_chunk:
+            assert len(scattered) == 0
         # all chunks are on the rcache
         if len(scattered) == 0:
             return
+
         # wait async reduce
         if self.reducing_chunk is not None:
             self.wait_reduce()

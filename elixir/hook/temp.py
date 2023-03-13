@@ -20,7 +20,7 @@ def grad_handler(grad: torch.Tensor, param: nn.Parameter, fetcher: ChunkFetcher)
     empty_grad.storage().resize_(0)
 
     with torch._C.DisableTorchFunction():
-        chunk = fetcher.get_chunks([param])[0]
+        chunk = fetcher.get_one_chunk(param)
         if chunk.tensors_info[param].state != TensorState.HOLD_AFTER_BWD:
             raise RuntimeError()
         fetcher.group.tensor_trans_state(param, TensorState.READY_FOR_REDUCE)
