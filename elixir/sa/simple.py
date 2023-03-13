@@ -1,3 +1,6 @@
+import math
+from functools import partial
+
 import torch
 import torch.nn as nn
 
@@ -5,40 +8,28 @@ from elixir.chunk import BlockRequire, ChunkGroup, MemoryPool
 from elixir.tracer.utils import meta_copy
 
 from .result import SearchResult
-from .utils import get_multi_used_params, to_divide
+from .utils import get_multi_used_params, to_divide, to_meta_tensor
 
 
-def simple_sa(m: nn.Module,
-              group_size: int,
-              split_number: int = 10,
-              test_dtype: torch.dtype = torch.float) -> SearchResult:
+def simple_sa(
+    m: nn.Module,
+    group_size: int,
+    split_number: int = 10,
+    allocate_factor: float = 0.75,
+    unified_dtype: torch.dtype = torch.float,
+    shard_device: torch.device = torch.device('cpu')) -> SearchResult:
 
-    def tensor_trans(t: torch.Tensor):
-        # to meta
-        meta_t = t.data.to(device='meta')
-        # to the pointed dtype
-        if t.is_floating_point():
-            meta_t = meta_t.to(dtype=test_dtype)
-        # pack it if t is a parameter
-        # we should filter parameters with no grad
-        if isinstance(t, nn.Parameter) and t.requires_grad:
-            meta_t = nn.Parameter(meta_t)
-        return meta_t
+    # get a meta copy of the model
+    m = meta_copy(m, partial(to_meta_tensor, dtype=unified_dtype))
 
-    m = meta_copy(m, tensor_trans)
-
-    param_to_name = dict()
-    for name, param in m.named_parameters():
-        param_to_name[param] = name
-
+    # create a mapping from parameter to name
+    param_to_name = {param: name for name, param in m.named_parameters()}
+    # get multi-used parameters
     private_params = get_multi_used_params(m)
-    public_params = list()
-    public_groups = list()
+    # get parameters used only one time
+    public_params = [p for p in m.parameters() if p not in private_params]
 
-    for param in m.parameters():
-        if param not in private_params:
-            public_params.append(param)
-
+    # calculate the size of each group
     len_public = len(public_params)
     split_number = min(len_public, split_number)
     average_size = len_public // split_number
@@ -52,6 +43,7 @@ def simple_sa(m: nn.Module,
         left_size -= 1
 
     # split public parameters
+    public_groups = list()
     for i in range(split_number):
         p_list = list()
         for _ in range(pack_size_list[i]):
@@ -76,23 +68,23 @@ def simple_sa(m: nn.Module,
         block_dtype = p.dtype
         br_list.append(BlockRequire(block_size, block_dtype))
 
-        fused_config = dict(rcache_fused=True)
+        chunk_kwargs = dict(rcache_fused=True, shard_device=shard_device)
         init_dict = dict(name_list=[param_to_name[p]],
                          chunk_size=block_size,
                          chunk_dtype=block_dtype,
-                         kwargs=fused_config)
+                         kwargs=chunk_kwargs)
         config_list.append(init_dict)
 
     for p_list in public_groups:
         name_list = [param_to_name[p] for p in p_list]
-        init_dict = dict(name_list=name_list, chunk_size=max_sum_size, chunk_dtype=test_dtype, kwargs=None)
+        init_dict = dict(name_list=name_list, chunk_size=max_sum_size, chunk_dtype=unified_dtype, kwargs=None)
         config_list.append(init_dict)
 
     # allocate a memory pool
     mp = MemoryPool('cuda')
-    mp.allocate(public_dtype=test_dtype,
+    mp.allocate(public_dtype=unified_dtype,
                 public_block_size=max_sum_size,
-                public_block_number=split_number // 2,
+                public_block_number=math.ceil(split_number * allocate_factor),
                 private_block_list=br_list)
     chunk_group = ChunkGroup(mp)
 
