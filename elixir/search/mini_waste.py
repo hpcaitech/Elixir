@@ -1,4 +1,5 @@
 import math
+from functools import partial
 
 import torch
 import torch.nn as nn
@@ -7,7 +8,7 @@ from elixir.chunk import BlockRequire, ChunkGroup, MemoryPool
 from elixir.tracer.utils import meta_copy
 
 from .result import SearchResult
-from .utils import find_minimum_waste_size, get_multi_used_params, to_divide
+from .utils import find_minimum_waste_size, get_multi_used_params, to_divide, to_meta_tensor
 
 dtype_to_es = {torch.float16: 2, torch.float32: 4, torch.float64: 8}
 
@@ -17,31 +18,19 @@ def is_leaf_module(m: torch.nn.Module) -> bool:
             and not isinstance(m, torch.nn.Sequential))
 
 
-def minimum_waste_sa(m: nn.Module,
-                     group_size: int,
-                     min_chunk_occ_mb: float = 32,
-                     max_chunk_occ_mb: float = 96,
-                     test_interval: int = 1024,
-                     unified_dtype: torch.dtype = torch.float) -> SearchResult:
+def minimum_waste_search(m: nn.Module,
+                         group_size: int,
+                         min_chunk_occ_mb: float = 32,
+                         max_chunk_occ_mb: float = 96,
+                         test_interval: int = 1024,
+                         unified_dtype: torch.dtype = torch.float) -> SearchResult:
 
     # transform unit first
     element_size = dtype_to_es.get(unified_dtype)
     min_chunk_size = math.ceil(min_chunk_occ_mb * 1024**2) // element_size
     max_chunk_size = math.ceil(max_chunk_occ_mb * 1024**2) // element_size
-
-    def tensor_trans(t: torch.Tensor):
-        # to meta
-        meta_t = t.data.to(device='meta')
-        # to the pointed dtype
-        if t.is_floating_point():
-            meta_t = meta_t.to(dtype=unified_dtype)
-        # pack it if t is a parameter
-        # we should filter parameters with no grad
-        if isinstance(t, nn.Parameter) and t.requires_grad:
-            meta_t = nn.Parameter(meta_t)
-        return meta_t
-
-    m = meta_copy(m, tensor_trans)
+    # get a meta copy of the model
+    m = meta_copy(m, partial(to_meta_tensor, dtype=unified_dtype))
 
     param_to_name = {param: name for name, param in m.named_parameters()}
     private_params = get_multi_used_params(m)
