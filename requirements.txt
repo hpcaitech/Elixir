@@ -1,0 +1,6 @@
+diffusers
+pytest
+sortedcontainers
+timm
+torch>=1.13.1
+transformers
