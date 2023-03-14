@@ -16,12 +16,10 @@ from elixir.parameter import FakeTensor, OutplaceTensor
 from elixir.search import SearchResult
 
 
-def get_param_optim_data(param_data: torch.Tensor, dtype: torch.dtype):
+def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
     param_data = param_data.to(gpu_dev())
-    if param_data == dtype:
-        optim_data = param_data.clone()
-    else:
-        optim_data = param_data.to(dtype)
+    optim_data = param_data.clone() if param_data.dtype == torch.float else param_data.float()
+    param_data = param_data.to(param_dtype)
     return param_data, optim_data
 
 
@@ -97,7 +95,7 @@ class ElixirModule(nn.Module):
             for name in plan.name_list:
                 param = self.grad_state_dict[name]
                 # TODO(helson): deal with lazy init
-                param_data, optim_data = get_param_optim_data(param.data)
+                param_data, optim_data = get_param_optim_data(param.data, self.dtype)
                 param.data = param_data
                 p_chunk.append_tensor(param)
                 o_chunk.append_tensor(optim_data)
@@ -110,7 +108,7 @@ class ElixirModule(nn.Module):
         # sanity check: every parameter needed gradient has been initialized
         for param in self.module.parameters():
             if param.requires_grad:
-                assert isinstance(param, FakeTensor)
+                assert isinstance(param.data, FakeTensor)
 
     def __init_chunk_fetcher(self, sr: SearchResult, prefetch: bool):
         scheduler = None
