@@ -64,10 +64,10 @@ class ElixirModule(nn.Module):
                 else:
                     self.no_grad_state_dict[name] = tensor
                     # polish no-grad parameters
-                    tensor.data = tensor.data.to(self.dtype, device=gpu_dev())
+                    tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_dev())
             else:
                 # deal with buffers
-                tensor.data = tensor.data.to(self.dtype, device=gpu_dev())
+                tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_dev())
 
         empty_mp = MemoryPool('cuda')
         empty_mp.allocate()
@@ -75,6 +75,7 @@ class ElixirModule(nn.Module):
         self.param_chunk_group = sr.chunk_group
         self.optim_chunk_group = ChunkGroup(empty_mp)
         self.param_to_optim = dict()
+        vis_set = set()
 
         for plan in sr.param_chunk_plans:
             assert plan.chunk_dtype == self.dtype
@@ -101,6 +102,8 @@ class ElixirModule(nn.Module):
                 o_chunk.append_tensor(optim_data)
                 self.param_to_optim[param] = optim_data
 
+                vis_set.add(param)
+
             self.param_chunk_group.close_chunk(p_chunk)
             self.optim_chunk_group.close_chunk(o_chunk)
             p_chunk.init_pair(o_chunk)
@@ -108,7 +111,7 @@ class ElixirModule(nn.Module):
         # sanity check: every parameter needed gradient has been initialized
         for param in self.module.parameters():
             if param.requires_grad:
-                assert isinstance(param.data, FakeTensor)
+                assert param in vis_set
 
     def __init_chunk_fetcher(self, sr: SearchResult, prefetch: bool):
         scheduler = None
@@ -134,11 +137,11 @@ class ElixirModule(nn.Module):
 
         return empty_grad
 
-    def _lazy_init_check(m: nn.Module):
+    def _lazy_init_check(self, m: nn.Module):
         # TODO(helson): deal with lazy init
         return False
 
-    def _set_module_outplace(m: nn.Module):
+    def _set_module_outplace(self, m: nn.Module):
         # set inplace to False for all modules
         for module in m.modules():
             if hasattr(module, 'inplace'):
@@ -166,10 +169,10 @@ class ElixirModule(nn.Module):
         self.fetcher.clear()
         HookParam.release_fetcher()
 
-    def state_dict(self, *args, destination=None, prefix='', keep_vars=False, only_rank_0: bool = False):
+    def state_dict(self, destination=None, prefix='', keep_vars=False, only_rank_0: bool = False):
         assert keep_vars is False, 'state_dict can not keep variables in ElixirModule'
         # make sure that the variables are kept, we shall detach them later
-        module_state_dict = self.module.state_dict(*args, destination, prefix, keep_vars=True)
+        module_state_dict = self.module.state_dict(destination=destination, prefix=prefix, keep_vars=True)
 
         optim_to_names = defaultdict(list)
         for name, tensor in module_state_dict.items():
