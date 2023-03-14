@@ -24,7 +24,7 @@ def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
 
 
 class ElixirModule(nn.Module):
-    """Use this class to wrap your model when using Elixir. Don't know what should be write here.
+    """Use this class to wrap your model when using Elixir. Don't know what should be written here.
     But some docstring is needed here.
 
     args:
