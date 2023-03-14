@@ -6,6 +6,14 @@ from elixir.chunk import ChunkGroup
 
 
 class ChunkPlan(NamedTuple):
+    """ChunkPlan is a type of configuration used to instruct the initialization of a chunk.
+
+    args:
+        name_list: contains the names of parameters that should be pushed into this chunk
+        chunk_size: the size of this chunk
+        chunk_dtype: the dtype of this chunk
+        kwargs: a dictionary used in __init__ function of Chunk
+    """
     name_list: List[str]
     chunk_size: int
     chunk_dtype: torch.dtype
