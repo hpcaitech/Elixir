@@ -24,6 +24,16 @@ def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
 
 
 class ElixirModule(nn.Module):
+    """Use this class to wrap your model when using Elixir. Don't know what should be write here.
+    But some docstring is needed here.
+
+    args:
+        module: training module
+        search_result: a SearchResult generated from a search algorithm in `elixir.search`
+        process_group: the communication group, ussually dp parallel group
+        prefetch: whether to use prefetch overlaping communication with computation
+        dtype: the dtype used in training
+    """
 
     def __init__(self,
                  module: nn.Module,
@@ -192,22 +202,3 @@ class ElixirModule(nn.Module):
         update_state_dict(self.optim_chunk_group.float_chunks)
 
         return module_state_dict
-
-
-def test():
-    nn.Module.state_dict
-    x = nn.BatchNorm1d(1024)
-    data = torch.randn(2, 1024, dtype=torch.float16)
-    y = x.state_dict(keep_vars=True)
-    for name, tensor in y.items():
-        if isinstance(tensor, nn.Parameter):
-            print('parameter', name)
-            tensor.data = tensor.data.to(torch.float16)
-        else:
-            print('buffer', name)
-    print(y)
-    print(x(data))
-
-
-if __name__ == '__main__':
-    test()
