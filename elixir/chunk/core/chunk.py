@@ -372,6 +372,24 @@ class Chunk:
     def get_tensors(self) -> List[torch.Tensor]:
         return list(self.tensors_info.keys())
 
+    def get_cpu_copy(self, only_rank_0: bool = False) -> List[torch.Tensor]:
+        assert not self.is_replica
+        assert not self.is_init
+        temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_dev())
+        # cheat the assertion in __update_replica
+        self.is_replica = True
+        self.__update_replica(temp_buffer, self.shard)
+        self.is_replica = False
+
+        cpu_copys = [None] * self.num_tensors
+        if not only_rank_0 or self.pg_rank == 0:
+            for i, (t, info) in enumerate(self.tensors_info.items()):
+                t_copy = temp_buffer[info.offset:info.end].view(t.shape).cpu()
+                cpu_copys[i] = t_copy
+        # synchronize
+        dist.barrier()
+        return cpu_copys
+
     def __update_replica(self, replica: torch.Tensor, shard: torch.Tensor):
         assert self.is_replica
         assert replica.numel() == self.chunk_size

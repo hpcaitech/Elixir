@@ -42,22 +42,27 @@ def exam_chunk_functions(nproc, group):
 
     chunk.close_chunk()
     assert chunk.is_replica is False
-
+    # check function: get_cpu_copy
+    cpu_copys = chunk.get_cpu_copy()
+    for t_gpu, t_cpu in zip([copy_a, copy_b, copy_c, copy_d], cpu_copys):
+        assert t_cpu.device.type == 'cpu'
+        assert torch.equal(t_gpu.cpu(), t_cpu)
+    # check function: access_chunk
     block = mp.get_public_block()
     chunk.access_chunk(block)
     assert chunk.is_replica
     assert chunk.scatter_check
     check_tensors()
-
+    # check function: release_chunk
     chunk.optim_sync_flag = False
     block = chunk.release_chunk()
     assert block in mp.public_used_blocks
     assert chunk.is_replica is False
     assert chunk.optim_sync_flag is True
-
+    # check function: access_chunk after release_chunk
     chunk.access_chunk(block)
     check_tensors()
-
+    # check function: reduce_chunk
     norm = block.payload.float().norm(2)**2
     chunk.reduce_chunk()
     assert chunk.is_replica is False
