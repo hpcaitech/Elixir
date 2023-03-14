@@ -1,5 +1,7 @@
+from collections import defaultdict
 from copy import copy
 from functools import partial
+from typing import Iterable
 
 import torch
 import torch.nn as nn
@@ -7,7 +9,7 @@ from torch.distributed import ProcessGroup
 from torch.utils._pytree import tree_map
 
 from elixir import gpu_dev
-from elixir.chunk import ChunkFetcher, ChunkGroup, MemoryPool, TensorState
+from elixir.chunk import Chunk, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
 from elixir.hook import HookParam
 from elixir.parameter import FakeTensor, OutplaceTensor
@@ -23,7 +25,7 @@ def get_param_optim_data(param_data: torch.Tensor, dtype: torch.dtype):
     return param_data, optim_data
 
 
-class ElixirModel(nn.Module):
+class ElixirModule(nn.Module):
 
     def __init__(self,
                  module: nn.Module,
@@ -165,6 +167,30 @@ class ElixirModel(nn.Module):
         self.module.zero_grad(set_to_none=True)
         self.fetcher.clear()
         HookParam.release_fetcher()
+
+    def state_dict(self, *args, destination=None, prefix='', keep_vars=False, only_rank_0: bool = False):
+        assert keep_vars is False, 'state_dict can not keep variables in ElixirModule'
+        # make sure that the variables are kept, we shall detach them later
+        module_state_dict = self.module.state_dict(*args, destination, prefix, keep_vars=True)
+
+        optim_to_names = defaultdict(list)
+        for name, tensor in module_state_dict.items():
+            if isinstance(tensor, nn.Parameter) and tensor.requires_grad:
+                optim_data = self.param_to_optim.get(self.grad_state_dict[name])
+                optim_to_names[optim_data].append(name)
+            else:
+                module_state_dict[name] = tensor.detach()
+
+        def update_state_dict(chunks: Iterable[Chunk]):
+            for c in chunks:
+                for op, cp in zip(c.get_tensors(), c.get_cpu_copy(only_rank_0)):
+                    for name in optim_to_names.get(op):
+                        module_state_dict[name] = cp
+
+        update_state_dict(self.optim_chunk_group.fused_chunks)
+        update_state_dict(self.optim_chunk_group.float_chunks)
+
+        return module_state_dict
 
 
 def test():
