@@ -7,7 +7,7 @@ import torch.nn as nn
 from elixir.chunk import BlockRequire, ChunkGroup, MemoryPool
 from elixir.tracer.utils import meta_copy
 
-from .result import SearchResult
+from .result import ChunkPlan, SearchResult
 from .utils import get_multi_used_params, to_divide, to_meta_tensor
 
 
@@ -61,25 +61,29 @@ def simple_search(
     max_sum_size = to_divide(max_sum_size, group_size)
 
     # get chunk configuration
-    config_list = list()
     br_list = list()
+    plan_list = list()
+
     for p in private_params:
         block_size = to_divide(p.numel(), group_size)
         block_dtype = p.dtype
         br_list.append(BlockRequire(block_size, block_dtype))
 
         chunk_kwargs = dict(rcache_fused=True, shard_device=shard_device)
-        init_dict = dict(name_list=[param_to_name[p]],
-                         chunk_size=block_size,
-                         chunk_dtype=block_dtype,
-                         kwargs=chunk_kwargs)
-        config_list.append(init_dict)
+        chunk_plan = ChunkPlan(name_list=[param_to_name[p]],
+                               chunk_size=block_size,
+                               chunk_dtype=block_dtype,
+                               kwargs=chunk_kwargs)
+        plan_list.append(chunk_plan)
 
     for p_list in public_groups:
         name_list = [param_to_name[p] for p in p_list]
         chunk_kwargs = dict(shard_device=shard_device)
-        init_dict = dict(name_list=name_list, chunk_size=max_sum_size, chunk_dtype=unified_dtype, kwargs=chunk_kwargs)
-        config_list.append(init_dict)
+        chunk_plan = ChunkPlan(name_list=name_list,
+                               chunk_size=max_sum_size,
+                               chunk_dtype=unified_dtype,
+                               kwargs=chunk_kwargs)
+        plan_list.append(chunk_plan)
 
     # allocate a memory pool
     mp = MemoryPool('cuda')
@@ -89,4 +93,4 @@ def simple_search(
                 private_block_list=br_list)
     chunk_group = ChunkGroup(mp)
 
-    return SearchResult(chunk_group, config_list)
+    return SearchResult(chunk_group, plan_list)
