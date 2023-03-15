@@ -14,15 +14,16 @@ from elixir.search import simple_search
 from elixir.wrapper import ElixirModule
 
 
-def exam_module_init(nproc, group):
+def exam_module_init(nproc, group, grad_flag):
     builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    torch_model = builder()
+    torch_model = builder().cuda()
+    for param in torch_model.parameters():
+        param.requires_grad = grad_flag
     test_model = copy.deepcopy(torch_model)
-    test_model = test_model.cuda()
 
     sr = simple_search(test_model, nproc, 10)
     model = ElixirModule(test_model, sr, group)
-
+    # check function: ElixirModule.state_dict after ElixirModule.__init__
     torch_st = torch_model.state_dict()
     test_st = model.state_dict()
     assert_dict_values(torch_st, test_st, fn=torch.equal)
@@ -35,7 +36,8 @@ def run_dist(rank, world_size):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = str(29512)
     init_distributed()
-    exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD)
+    exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=False)
+    exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=True)
 
 
 @pytest.mark.dist

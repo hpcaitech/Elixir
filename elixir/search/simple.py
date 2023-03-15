@@ -32,33 +32,36 @@ def simple_search(
     # calculate the size of each group
     len_public = len(public_params)
     split_number = min(len_public, split_number)
-    average_size = len_public // split_number
-    left_size = len_public % split_number
-
-    # set the size of each segment
-    pack_size_list = [average_size] * split_number
-    for i in range(split_number):
-        if left_size > 0:
-            pack_size_list[i] += 1
-        left_size -= 1
-
-    # split public parameters
+    # allocate a list for groups
     public_groups = list()
-    for i in range(split_number):
-        p_list = list()
-        for _ in range(pack_size_list[i]):
-            p = public_params.pop(0)
-            p_list.append(p)
-        public_groups.append(p_list)
-    assert len(public_params) == 0
-    del public_params
+    if split_number > 0:
+        average_size = len_public // split_number
+        left_size = len_public % split_number
 
-    # calculate the maximum summarized size
-    max_sum_size = 0
-    for p_list in public_groups:
-        sum_size = sum([p.numel() for p in p_list])
-        max_sum_size = max(max_sum_size, sum_size)
-    max_sum_size = to_divide(max_sum_size, group_size)
+        # set the size of each segment
+        pack_size_list = [average_size] * split_number
+        for i in range(split_number):
+            if left_size > 0:
+                pack_size_list[i] += 1
+            left_size -= 1
+
+        # split public parameters
+        for i in range(split_number):
+            p_list = list()
+            for _ in range(pack_size_list[i]):
+                p = public_params.pop(0)
+                p_list.append(p)
+            public_groups.append(p_list)
+        assert len(public_params) == 0
+
+        # calculate the maximum summarized size
+        max_sum_size = 0
+        for p_list in public_groups:
+            sum_size = sum([p.numel() for p in p_list])
+            max_sum_size = max(max_sum_size, sum_size)
+        max_sum_size = to_divide(max_sum_size, group_size)
+    else:
+        max_sum_size = 0
 
     # get chunk configuration
     br_list = list()
