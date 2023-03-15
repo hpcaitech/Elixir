@@ -116,8 +116,7 @@ def run_dist(rank, world_size):
 
 
 @pytest.mark.dist
-def test_chunk_scheduler():
-    world_size = 1
+def test_chunk_scheduler(world_size=1):
     run_func = partial(run_dist, world_size=world_size)
     torch.multiprocessing.spawn(run_func, nprocs=world_size)
 

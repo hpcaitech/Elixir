@@ -86,11 +86,11 @@ def run_dist(rank, world_size):
 
 
 @pytest.mark.dist
-def test_chunk_group():
-    world_size = 4
+@pytest.mark.parametrize('world_size', [1, 2, 4])
+def test_chunk_group(world_size):
     run_func = partial(run_dist, world_size=world_size)
     torch.multiprocessing.spawn(run_func, nprocs=world_size)
 
 
 if __name__ == '__main__':
-    test_chunk_group()
+    test_chunk_group(world_size=2)
