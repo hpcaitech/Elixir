@@ -5,8 +5,8 @@ import torch.nn as nn
 import torchvision.models as tm
 from torch.testing import assert_close
 
-from elixir import seed_all
 from elixir.parameter.temp import transform
+from elixir.utils import seed_all
 
 
 def test_model(builder, kwargs):

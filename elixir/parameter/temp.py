@@ -6,8 +6,8 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-from elixir import calc_buffer_size, gpu_device
 from elixir.parameter import FakeTensor, OutplaceTensor, is_no_hook_op, to_outplace_tensor
+from elixir.utils import calc_buffer_size, gpu_device
 
 
 class Store(object):

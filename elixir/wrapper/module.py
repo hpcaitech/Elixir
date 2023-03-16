@@ -8,12 +8,12 @@ import torch.nn as nn
 from torch.distributed import ProcessGroup
 from torch.utils._pytree import tree_map
 
-from elixir import gpu_device
 from elixir.chunk import Chunk, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
 from elixir.hook import HookParam
 from elixir.parameter import FakeTensor, OutplaceTensor
 from elixir.search import SearchResult
+from elixir.utils import gpu_device
 
 
 def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):

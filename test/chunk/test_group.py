@@ -5,8 +5,8 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from elixir import init_distributed
 from elixir.chunk import BlockRequire, ChunkGroup, MemoryPool, TensorState
+from elixir.utils import init_distributed
 
 
 def exam_chunk_group_functions(nproc, group):

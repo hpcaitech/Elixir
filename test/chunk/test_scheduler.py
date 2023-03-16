@@ -5,9 +5,9 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from elixir import init_distributed
 from elixir.chunk import Chunk, MemoryPool
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
+from elixir.utils import init_distributed
 
 
 def exam_fifo(nproc, group):
