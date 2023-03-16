@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
-from elixir import calc_buffer_size, gpu_dev
+from elixir import calc_buffer_size, gpu_device
 from elixir.parameter import FakeTensor, OutplaceTensor, is_no_hook_op, to_outplace_tensor
 
 
@@ -16,7 +16,7 @@ class Store(object):
         super().__init__()
         self.buffer_size = buffer_size
         self.buffer_dtype = buffer_dtype
-        self.buffer: torch.Tensor = torch.empty(buffer_size, dtype=buffer_dtype, device=gpu_dev())
+        self.buffer: torch.Tensor = torch.empty(buffer_size, dtype=buffer_dtype, device=gpu_device())
         self.record_dict = dict()
 
     def insert(self, t: torch.Tensor, offset: int) -> int:

@@ -27,7 +27,7 @@ def normalize_tuple(x):
 
 
 @cache
-def gpu_dev():
+def gpu_device():
     return torch.device(torch.cuda.current_device())
 
 
