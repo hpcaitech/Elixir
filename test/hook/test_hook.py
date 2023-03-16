@@ -1,7 +1,9 @@
+from copy import deepcopy
+
 import torch
 import torch.nn as nn
 
-from elixir.hook import HookParam
+from elixir.hook import BufferStore, HookParam
 from elixir.parameter import FakeTensor
 
 
@@ -23,5 +25,32 @@ def test_hook():
     assert x.storage_offset() == ori_offset
 
 
+def test_store():
+    buffer = BufferStore(1024, torch.float16)
+    print(buffer)
+
+    x = torch.randn(4, 128, dtype=torch.float16, device='cuda')
+    original_ptr_x = x.data_ptr()
+    copy_x = deepcopy(x)
+
+    y = torch.randn(512, dtype=torch.float16, device='cuda')
+    original_ptr_y = y.data_ptr()
+    copy_y = deepcopy(y)
+
+    offset = 0
+    offset = buffer.insert(x, offset)
+    assert offset == x.numel()
+    assert torch.equal(x, copy_x)
+
+    offset = buffer.insert(y, offset)
+    assert offset == 1024
+    assert torch.equal(y, copy_y)
+
+    buffer.erase(x)
+    buffer.erase(y)
+    assert x.data_ptr() == original_ptr_x
+    assert y.data_ptr() == original_ptr_y
+
+
 if __name__ == '__main__':
-    test_hook()
+    test_store()
