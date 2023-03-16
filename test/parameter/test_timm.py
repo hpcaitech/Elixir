@@ -5,8 +5,8 @@ import torch
 import torch.nn.functional as F
 from torch.testing import assert_close
 
-from elixir import seed_all
 from elixir.parameter.temp import transform
+from elixir.utils import seed_all
 
 
 def assert_tuple_close(ta, tb):

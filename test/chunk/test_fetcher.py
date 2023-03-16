@@ -9,9 +9,9 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.testing import assert_close
 
-from elixir import init_distributed, seed_all
 from elixir.chunk import ChunkGroup
 from elixir.hook import hook_transform
+from elixir.utils import init_distributed, seed_all
 
 
 def check_gradient(ddp_model, my_model, cg: ChunkGroup):

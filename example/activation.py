@@ -3,9 +3,9 @@ from test.utils.gpt import GPTLMModel, MacroIterator
 import torch
 from transformers import AutoConfig, OPTConfig, OPTForCausalLM
 
-from elixir import get_model_size, model_size_formatter
 from elixir.ctx import MetaContext
 from elixir.tracer.memory_tracer import cuda_memory_profiling
+from elixir.utils import get_model_size, model_size_formatter
 
 
 def gpt2_10b():

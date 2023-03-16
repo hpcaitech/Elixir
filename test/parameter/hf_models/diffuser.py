@@ -5,8 +5,8 @@ import diffusers
 import torch
 from torch.testing import assert_close
 
-from elixir import seed_all
 from elixir.parameter.temp import transform
+from elixir.utils import seed_all
 
 BATCH_SIZE = 2
 SEQ_LENGTH = 5

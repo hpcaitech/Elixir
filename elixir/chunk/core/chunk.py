@@ -5,8 +5,8 @@ import torch
 import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
-from elixir import gpu_device
 from elixir.parameter import FakeTensor
+from elixir.utils import gpu_device
 
 from .memory_pool import MemoryPool, PrivateBlock, PublicBlock, TensorBlock
 from .states import TensorState, ts_update_sanity_check

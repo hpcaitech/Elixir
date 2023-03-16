@@ -4,9 +4,9 @@ import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from elixir import gpu_device, no_dispatch, normalize_tuple
 from elixir.parameter import is_no_hook_op
 from elixir.tracer.utils import meta_copy
+from elixir.utils import gpu_device, no_dispatch, normalize_tuple
 
 
 class FakeCudaTensor(torch.Tensor):
