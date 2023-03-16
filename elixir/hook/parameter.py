@@ -4,9 +4,11 @@ import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
+from elixir.chunk import ChunkFetcher
 from elixir.parameter import OutplaceTensor, is_no_hook_op, to_outplace_tensor
 
 from .functions import postfwd_prebwd_function, prefwd_postbwd_function
+from .storage import BufferStore
 
 
 class HookParam(OutplaceTensor, nn.Parameter):
@@ -14,9 +16,9 @@ class HookParam(OutplaceTensor, nn.Parameter):
     post_fwd_func = None
 
     @staticmethod
-    def attach_fetcher(fetcher):
-        HookParam.pre_fwd_func = prefwd_postbwd_function(fetcher)
-        HookParam.post_fwd_func = postfwd_prebwd_function(fetcher)
+    def attach_fetcher(fetcher: ChunkFetcher, store: BufferStore):
+        HookParam.pre_fwd_func = prefwd_postbwd_function(fetcher, store)
+        HookParam.post_fwd_func = postfwd_prebwd_function(fetcher, store)
 
     @staticmethod
     def release_fetcher():
@@ -46,8 +48,7 @@ class HookParam(OutplaceTensor, nn.Parameter):
         tree_map(append_param, kwargs)
 
         params = tuple(params_to_index.keys())
-        with torch._C.DisableTorchFunction():
-            new_params = HookParam.pre_fwd_func(params, *params)
+        new_params = HookParam.pre_fwd_func(params, *params)
 
         def replace_param(x):
             if isinstance(x, HookParam):
@@ -64,13 +65,14 @@ class HookParam(OutplaceTensor, nn.Parameter):
             ptr_set.add(p.data_ptr())
 
         def clone_inplace_tensor(x):
-            if isinstance(x, torch.Tensor) and x.data_ptr() in ptr_set:
-                return x.clone()
+            if isinstance(x, torch.Tensor):
+                start_point = x.data_ptr() - x.element_size() * x.storage_offset()
+                if start_point in ptr_set:
+                    return x.clone()
             return x
 
         ret = tree_map(clone_inplace_tensor, ret)
-        with torch._C.DisableTorchFunction():
-            ret = HookParam.post_fwd_func(params, *ret)
+        ret = HookParam.post_fwd_func(params, *ret)
 
         def convert(t):
             if isinstance(t, torch.Tensor):
