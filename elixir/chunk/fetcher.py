@@ -64,6 +64,10 @@ class ChunkFetcher(object):
     def get_chunks(self, tensors: list[torch.Tensor]) -> list[Chunk]:
         return self.group.tensors_to_chunks(tensors)
 
+    def is_in_fused(self, tensor: torch.Tensor):
+        chunk = self.get_one_chunk(tensor)
+        return chunk.rcache_fused
+
     def filter_chunks(self, chunks: list[Chunk]):
         return list(filter(lambda c: not self.group.is_accessed(c), chunks))
 
