@@ -42,7 +42,7 @@ class Chunk:
 
         self.chunk_id: int = Chunk.total_count
         Chunk.total_count += 1
-        # set rcache
+        # set replicated cache pool
         self.rcache: MemoryPool = rcache
 
         self.chunk_size: int = chunk_size
