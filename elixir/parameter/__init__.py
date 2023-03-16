@@ -51,7 +51,7 @@ def to_outplace_tensor(t):
 
 
 class OutplaceTensor(torch.Tensor):
-
+    # TODO: rename this class
     def __new__(cls, tensor):
         rt = tensor.as_subclass(cls)
         return rt

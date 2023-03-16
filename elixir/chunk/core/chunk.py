@@ -25,6 +25,7 @@ class TensorInfo:
 
 
 class Chunk:
+    # TODO: add docstring
     total_count = 0
 
     def __init__(
