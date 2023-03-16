@@ -6,37 +6,95 @@ import torch.nn as nn
 from torch.fx.immutable_collections import immutable_dict
 from torch.utils._pytree import tree_map
 
+from elixir import calc_buffer_size, gpu_dev
 from elixir.parameter import FakeTensor, OutplaceTensor, is_no_hook_op, to_outplace_tensor
 
 
-class PreFwdPostBwd(torch.autograd.Function):
+class Store(object):
 
-    @staticmethod
-    def forward(ctx, params, *args):
-        ctx.params = params
-        for p in ctx.params:
-            p.data = p.my_data
-        return args
+    def __init__(self, buffer_size: torch.Tensor, buffer_dtype: torch.dtype) -> None:
+        super().__init__()
+        self.buffer_size = buffer_size
+        self.buffer_dtype = buffer_dtype
+        self.buffer: torch.Tensor = torch.empty(buffer_size, dtype=buffer_dtype, device=gpu_dev())
+        self.record_dict = dict()
 
-    @staticmethod
-    def backward(ctx, *grads):
-        return (None, *grads)
+    def insert(self, t: torch.Tensor, offset: int) -> int:
+        assert t not in self.record_dict
+        end = offset + t.numel()
+        assert end <= self.buffer_size, f'buffer size is {self.buffer_size} but needs {end}'
+
+        new_data = self.buffer[offset:end].view(t.shape)
+        new_data.copy_(t.data)
+
+        self.record_dict[t] = t.data
+        t.data = new_data
+
+        return end
+
+    def erase(self, t: torch.Tensor):
+        assert t in self.record_dict
+
+        new_data = self.record_dict.pop(t)
+        t.data = new_data
+
+        return
 
 
-class PostFwdPreBwd(torch.autograd.Function):
+def prefwd_postbwd_func(store: Store):
 
-    @staticmethod
-    def forward(ctx, params, *args):
-        ctx.params = params
-        for p in ctx.params:
-            p.data = p.fake_data
-        return args
+    class PreFwdPostBwd(torch.autograd.Function):
 
-    @staticmethod
-    def backward(ctx, *grads):
-        for p in ctx.params:
-            p.data = p.my_data
-        return (None, *grads)
+        @staticmethod
+        def forward(ctx, params, *args):
+            with torch._C.DisableTorchFunction():
+                ctx.params = params
+                for p in ctx.params:
+                    p.data = p.my_data
+
+                offset = 0
+                for p in ctx.params:
+                    offset = store.insert(p, offset)
+                return args
+
+        @staticmethod
+        def backward(ctx, *grads):
+            with torch._C.DisableTorchFunction():
+                for p in ctx.params:
+                    torch.zero_(p.data)
+                    store.erase(p)
+                return (None, *grads)
+
+    return PreFwdPostBwd.apply
+
+
+def postfwd_prebwd_func(store: Store):
+
+    class PostFwdPreBwd(torch.autograd.Function):
+
+        @staticmethod
+        def forward(ctx, params, name, *args):
+            with torch._C.DisableTorchFunction():
+                ctx.params = params
+                ctx.name = name
+                for p in ctx.params:
+                    torch.zero_(p.data)
+                    store.erase(p)
+                return args
+
+        @staticmethod
+        def backward(ctx, *grads):
+            with torch._C.DisableTorchFunction():
+                # print("backward name", ctx.name)
+                for p in ctx.params:
+                    p.data = p.my_data
+
+                offset = 0
+                for p in ctx.params:
+                    offset = store.insert(p, offset)
+                return (None, None, *grads)
+
+    return PostFwdPreBwd.apply
 
 
 class MyParameter(OutplaceTensor, nn.Parameter):
@@ -51,6 +109,11 @@ class MyParameter(OutplaceTensor, nn.Parameter):
             r.fake_data = FakeTensor(r.my_data)
             r.data = r.fake_data
         return r
+
+    @staticmethod
+    def attach_functions(store: Store):
+        MyParameter.pre_post = prefwd_postbwd_func(store)
+        MyParameter.post_pre = postfwd_prebwd_func(store)
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
@@ -75,8 +138,7 @@ class MyParameter(OutplaceTensor, nn.Parameter):
         tree_map(append_param, kwargs)
 
         params = tuple(params_to_index.keys())
-        with torch._C.DisableTorchFunction():
-            new_params = PreFwdPostBwd.apply(params, *params)
+        new_params = MyParameter.pre_post(params, *params)
 
         def replace_param(x):
             if isinstance(x, MyParameter):
@@ -108,13 +170,14 @@ class MyParameter(OutplaceTensor, nn.Parameter):
             ptr_set.add(p.data_ptr())
 
         def clone_inplace_tensor(x):
-            if isinstance(x, torch.Tensor) and x.data_ptr() in ptr_set:
-                return x.clone()
+            if isinstance(x, torch.Tensor):
+                start_point = x.data_ptr() - x.element_size() * x.storage_offset()
+                if start_point in ptr_set:
+                    return x.clone()
             return x
 
         ret = tree_map(clone_inplace_tensor, ret)
-        with torch._C.DisableTorchFunction():
-            ret = PostFwdPreBwd.apply(params, *ret)
+        ret = MyParameter.post_pre(params, func.__name__, *ret)
 
         def convert(t):
             if isinstance(t, torch.Tensor):
@@ -130,6 +193,9 @@ class MyParameter(OutplaceTensor, nn.Parameter):
 
 
 def transform(m: nn.Module) -> nn.Module:
+    buffer_size = calc_buffer_size(m)
+    MyParameter.attach_functions(Store(buffer_size, torch.float))
+
     # transform each parameter to MyParameter
     for m_name, module in m.named_modules():
         param_list = list(module.named_parameters(recurse=False))
@@ -147,7 +213,7 @@ def transform(m: nn.Module) -> nn.Module:
         input_list = list()
         for t in inputs:
             if isinstance(t, torch.Tensor):
-                t = to_outplace_tensor(t)
+                t = OutplaceTensor(t)
             input_list.append(t)
         return tuple(input_list)
 
@@ -157,10 +223,14 @@ def transform(m: nn.Module) -> nn.Module:
 
 
 def main():
-    x = torch.randn(4, 4)
+    x = torch.randn(4, 4, requires_grad=True)
     z = OutplaceTensor(x)
-    print(z.data)
-    print(type(z.data))
+
+    def my_func(x, y):
+        return torch.add(x, y)
+
+    res = my_func(z, z)
+    print(type(res))
 
 
 if __name__ == '__main__':

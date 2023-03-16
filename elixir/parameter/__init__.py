@@ -53,11 +53,12 @@ def to_outplace_tensor(t):
 class OutplaceTensor(torch.Tensor):
 
     def __new__(cls, tensor):
-        rt = torch.Tensor._make_subclass(cls, tensor, tensor.requires_grad)
+        rt = tensor.as_subclass(cls)
         return rt
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
+
         if kwargs is None:
             kwargs = {}
         # in order to trigger pre-op hook in the forward of checkpoint module
