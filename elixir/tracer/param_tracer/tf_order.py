@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from elixir import gpu_dev, no_dispatch, normalize_tuple
+from elixir import gpu_device, no_dispatch, normalize_tuple
 from elixir.parameter import is_no_hook_op
 from elixir.tracer.utils import meta_copy
 
@@ -24,7 +24,7 @@ class FakeCudaTensor(torch.Tensor):
         # TODO: clone strides and storage aliasing
             dtype=elem.dtype,
             layout=elem.layout,
-            device=gpu_dev(),
+            device=gpu_device(),
             requires_grad=elem.requires_grad)
         r.elem = elem.to('meta')
         return r
@@ -76,7 +76,7 @@ class Record(FakeCudaTensor, nn.Parameter):
                                                 storage_offset=elem.storage_offset(),
                                                 dtype=elem.dtype,
                                                 layout=elem.layout,
-                                                device=gpu_dev(),
+                                                device=gpu_device(),
                                                 requires_grad=True)
         r.elem = elem
         return r

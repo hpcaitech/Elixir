@@ -27,7 +27,7 @@ def normalize_tuple(x):
 
 
 @cache
-def gpu_dev():
+def gpu_device():
     return torch.device(torch.cuda.current_device())
 
 
@@ -84,3 +84,14 @@ def model_size_formatter(numel: int) -> str:
         return f'{numel / KB_SIZE:.1f}K'
     else:
         return str(numel)
+
+
+def calc_buffer_size(m: nn.Module, test_dtype: torch.dtype = torch.float):
+    max_sum_size = 0
+    for module in m.modules():
+        sum_p_size = 0
+        for param in module.parameters(recurse=False):
+            assert param.dtype == test_dtype
+            sum_p_size += param.numel()
+        max_sum_size = max(max_sum_size, sum_p_size)
+    return max_sum_size

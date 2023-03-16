@@ -5,7 +5,7 @@ import torch
 import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
-from elixir import gpu_dev
+from elixir import gpu_device
 from elixir.parameter import FakeTensor
 
 from .memory_pool import MemoryPool, PrivateBlock, PublicBlock, TensorBlock
@@ -25,6 +25,7 @@ class TensorInfo:
 
 
 class Chunk:
+    # TODO: add docstring
     total_count = 0
 
     def __init__(
@@ -81,7 +82,7 @@ class Chunk:
         if self.rcache_fused:
             self._my_block = rcache.get_private_block(chunk_size, chunk_dtype)
 
-        temp_device: torch.device = temp_device or gpu_dev()
+        temp_device: torch.device = temp_device or gpu_device()
         # chunk_temp is a global chunk, which only exists during building the chunks.
         # keep all elements to zero
         self.chunk_temp: Optional[torch.Tensor] = None
@@ -375,7 +376,7 @@ class Chunk:
     def get_cpu_copy(self, only_rank_0: bool = False) -> List[torch.Tensor]:
         assert not self.is_replica
         assert not self.is_init
-        temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_dev())
+        temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_device())
         # cheat the assertion in __update_replica
         self.is_replica = True
         self.__update_replica(temp_buffer, self.shard)
@@ -416,7 +417,7 @@ class Chunk:
         # only be called when optimizer state is in CPU memory
         # the grad and param should be in the same device
         assert self.shard_device.type == 'cpu'
-        return optim_chunk.shard.to(gpu_dev())
+        return optim_chunk.shard.to(gpu_device())
 
     def __remove_tensors_ptr(self) -> None:
         # sanity check

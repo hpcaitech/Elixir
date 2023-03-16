@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.distributed import ProcessGroup
 from torch.utils._pytree import tree_map
 
-from elixir import gpu_dev
+from elixir import gpu_device
 from elixir.chunk import Chunk, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
 from elixir.hook import HookParam
@@ -17,7 +17,7 @@ from elixir.search import SearchResult
 
 
 def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
-    param_data = param_data.to(gpu_dev())
+    param_data = param_data.to(gpu_device())
     optim_data = param_data.clone() if param_data.dtype == torch.float else param_data.float()
     param_data = param_data.to(param_dtype)
     return param_data, optim_data
@@ -74,10 +74,10 @@ class ElixirModule(nn.Module):
                 else:
                     self.no_grad_state_dict[name] = tensor
                     # polish no-grad parameters
-                    tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_dev())
+                    tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
             else:
                 # deal with buffers
-                tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_dev())
+                tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
 
         empty_mp = MemoryPool('cuda')
         empty_mp.allocate()
