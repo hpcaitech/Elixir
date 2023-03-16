@@ -47,7 +47,7 @@ class HookParam(OutplaceTensor, nn.Parameter):
 
         params = tuple(params_to_index.keys())
         with torch._C.DisableTorchFunction():
-            new_params = HookParam.pre_fwd_func.apply(params, *params)
+            new_params = HookParam.pre_fwd_func(params, *params)
 
         def replace_param(x):
             if isinstance(x, HookParam):
@@ -70,7 +70,7 @@ class HookParam(OutplaceTensor, nn.Parameter):
 
         ret = tree_map(clone_inplace_tensor, ret)
         with torch._C.DisableTorchFunction():
-            ret = HookParam.post_fwd_func.apply(params, *ret)
+            ret = HookParam.post_fwd_func(params, *ret)
 
         def convert(t):
             if isinstance(t, torch.Tensor):

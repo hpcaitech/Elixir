@@ -10,16 +10,24 @@ def prefwd_postbwd_function(fetcher: ChunkFetcher):
         @staticmethod
         def forward(ctx, params, *args):
             ctx.params = params
-            chunks = fetcher.trans_to_compute(params)
-            fetcher.fetch_chunks(chunks)
             return args
 
         @staticmethod
         def backward(ctx, *grads):
-            fetcher.trans_to_hold(ctx.params, phase='b')
-            return (None, *grads)
+            with torch._C.DisableTorchFunction():
+                print('grad You know', end=' ')
+                for g in grads:
+                    print(torch.sum(g), end=' ')
+                print('')
+                fetcher.trans_to_hold(ctx.params, phase='b')
+                return (None, *grads)
 
-    return PreFwdPostBwd
+    def exec_func(params, *args):
+        chunks = fetcher.trans_to_compute(params)
+        fetcher.fetch_chunks(chunks)
+        return PreFwdPostBwd.apply(params, *args)
+
+    return exec_func
 
 
 def postfwd_prebwd_function(fetcher: ChunkFetcher):
@@ -29,13 +37,29 @@ def postfwd_prebwd_function(fetcher: ChunkFetcher):
         @staticmethod
         def forward(ctx, params, *args):
             ctx.params = params
-            fetcher.trans_to_hold(params, phase='f')
             return args
 
         @staticmethod
         def backward(ctx, *grads):
-            chunks = fetcher.trans_to_compute(ctx.params)
-            fetcher.fetch_chunks(chunks)
-            return (None, *grads)
+            with torch._C.DisableTorchFunction():
+                chunks = fetcher.trans_to_compute(ctx.params)
+                fetcher.fetch_chunks(chunks)
+                print('grad before', end=' ')
+                for g in grads:
+                    print(torch.sum(g), g.data_ptr(), end=' ')
+                print('')
+                print('fetching', end=' ')
+                for c in chunks:
+                    print(c.chunk_id, c.rcb.payload.data_ptr(), end=' ')
+                print('')
+                print('grad after', end=' ')
+                for g in grads:
+                    print(torch.sum(g), end=' ')
+                print('')
+                return (None, *grads)
 
-    return PostFwdPreBwd
+    def exec_func(params, *args):
+        fetcher.trans_to_hold(params, phase='f')
+        return PostFwdPreBwd.apply(params, *args)
+
+    return exec_func

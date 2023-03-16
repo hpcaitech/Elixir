@@ -25,7 +25,7 @@ def check_gradient(ddp_model, my_model, cg: ChunkGroup):
 
 
 def exam_chunk_fetcher(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     torch_model = builder().cuda()
     test_model = copy.deepcopy(torch_model)
 
@@ -35,8 +35,8 @@ def exam_chunk_fetcher(nproc, group):
     data, label = next(train_iter)
     data = data.cuda()
 
-    seed_all(1001)
-    ddp_model = DDP(torch_model)
+    seed_all(1001, cuda_deterministic=True)
+    ddp_model = DDP(torch_model, bucket_cap_mb=0)
     ddp_loss = ddp_model(data).sum()
     ddp_loss.backward()
 

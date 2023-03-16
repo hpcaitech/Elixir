@@ -139,6 +139,7 @@ class ElixirModule(nn.Module):
 
         with torch._C.DisableTorchFunction():
             chunk = self.fetcher.get_one_chunk(param)
+            assert self.fetcher.group.is_accessed(chunk)
             if chunk.tensors_info[param].state != TensorState.HOLD_AFTER_BWD:
                 raise RuntimeError()
             self.fetcher.group.tensor_trans_state(param, TensorState.READY_FOR_REDUCE)

@@ -116,9 +116,7 @@ class ChunkGroup(object):
     def rcache_enough_check(self, chunk: Chunk) -> bool:
         if chunk.rcache_fused:
             return True
-        # the flag of free block list
-        flag = bool(self.rcache.public_free_blocks)
-        return flag
+        return self.rcache.public_free_cnt > 0
 
     def access_chunk(self, chunk: Chunk) -> bool:
         self.inside_check(chunk)
@@ -149,6 +147,7 @@ class ChunkGroup(object):
         self.inside_check(chunk)
         assert self.is_accessed(chunk)
         assert chunk.reduce_check
+        print('REDUCE', chunk.chunk_id)
 
         block = chunk.reduce_chunk()
         if block:
