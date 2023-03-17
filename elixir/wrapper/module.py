@@ -10,8 +10,8 @@ from torch.utils._pytree import tree_map
 
 from elixir.chunk import Chunk, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
-from elixir.hook import HookParam
-from elixir.parameter import FakeTensor, OutplaceTensor
+from elixir.hook import BufferStore, HookParam
+from elixir.parameter import OutplaceTensor
 from elixir.search import SearchResult
 from elixir.utils import gpu_device
 
@@ -55,6 +55,7 @@ class ElixirModule(nn.Module):
         self.grad_state_dict = dict()
         self.__init_chunk_group(search_result)
         self.__init_chunk_fetcher(search_result, prefetch)
+        self.__init_buffer_storage()
 
         for name, param in module.named_parameters():
             if not param.requires_grad:
@@ -132,6 +133,19 @@ class ElixirModule(nn.Module):
 
         self.fetcher = ChunkFetcher(scheduler, self.param_chunk_group, overlap=prefetch)
 
+    def __init_buffer_storage(self):
+        buffer_size = 0
+        for submodule in self.modules():
+            sum_param_size = 0
+            for param in submodule.parameters(recurse=False):
+                if not param.requires_grad or self.fetcher.is_in_fused(param):
+                    continue
+                assert param.dtype == self.dtype
+                sum_param_size += param.numel()
+            buffer_size = max(buffer_size, sum_param_size)
+        self.buffer = BufferStore(buffer_size, self.dtype)
+        print('module buffer', self.buffer)
+
     def _gradient_handler(self, grad: torch.Tensor, param: nn.Parameter):
         # create an empty tensor
         empty_grad = torch.empty_like(grad)
@@ -139,6 +153,7 @@ class ElixirModule(nn.Module):
 
         with torch._C.DisableTorchFunction():
             chunk = self.fetcher.get_one_chunk(param)
+            assert self.fetcher.group.is_accessed(chunk)
             if chunk.tensors_info[param].state != TensorState.HOLD_AFTER_BWD:
                 raise RuntimeError()
             self.fetcher.group.tensor_trans_state(param, TensorState.READY_FOR_REDUCE)
@@ -159,7 +174,7 @@ class ElixirModule(nn.Module):
 
     def forward(self, *args, **kwargs):
         self.fetcher.reset()
-        HookParam.attach_fetcher(self.fetcher)
+        HookParam.attach_fetcher(self.fetcher, self.buffer)
 
         def to_outplace_tensor(t):
             if torch.is_tensor(t):

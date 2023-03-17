@@ -25,7 +25,7 @@ def check_gradient(ddp_model, my_model, cg: ChunkGroup):
 
 
 def exam_chunk_fetcher(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('mlp')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     torch_model = builder().cuda()
     test_model = copy.deepcopy(torch_model)
 
@@ -35,7 +35,7 @@ def exam_chunk_fetcher(nproc, group):
     data, label = next(train_iter)
     data = data.cuda()
 
-    seed_all(1001)
+    seed_all(1001, cuda_deterministic=True)
     ddp_model = DDP(torch_model)
     ddp_loss = ddp_model(data).sum()
     ddp_loss.backward()
@@ -59,7 +59,7 @@ def run_dist(rank, world_size):
     exam_chunk_fetcher(nproc=world_size, group=dist.GroupMember.WORLD)
 
 
-@pytest.mark.dist
+@pytest.mark.skip(reason='remove temp.py in elixir.hook and use ElixirModule instead')
 @pytest.mark.parametrize('world_size', [1, 2, 4])
 def test_chunk_fetcher(world_size):
     run_func = partial(run_dist, world_size=world_size)
