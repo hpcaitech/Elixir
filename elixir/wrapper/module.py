@@ -69,6 +69,7 @@ class ElixirModule(nn.Module):
         state_dict = self.module.state_dict(keep_vars=True)
         for name, tensor in state_dict.items():
             if isinstance(tensor, nn.Parameter):
+                assert tensor.is_floating_point(), 'the dtypes of parameters should be float dtypes'
                 # deal with parameters
                 if tensor.requires_grad:
                     self.grad_state_dict[name] = tensor
@@ -78,7 +79,8 @@ class ElixirModule(nn.Module):
                     tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
             else:
                 # deal with buffers
-                tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
+                to_dtype = self.dtype if tensor.is_floating_point() else tensor.dtype
+                tensor.data = tensor.data.to(dtype=to_dtype, device=gpu_device())
 
         empty_mp = MemoryPool('cuda')
         empty_mp.allocate()
