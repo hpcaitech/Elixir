@@ -1,20 +1,20 @@
 import math
+from collections import defaultdict
 from enum import Enum
-from typing import Any, Dict, Set, Tuple
+from typing import Dict, Set, Tuple
 
+import colossalai.nn.optimizer as ColoOptimizer
 import torch
 import torch.distributed as dist
-from colossalai.amp.naive_amp.grad_scaler import DynamicGradScaler
-from colossalai.nn.optimizer import ColossalaiOptimizer, CPUAdam, FusedAdam, HybridAdam
+from colossalai.amp.naive_amp.grad_scaler import BaseGradScaler, ConstantGradScaler, DynamicGradScaler
 from torch.nn import Parameter
-from torch.optim import Optimizer
 
-from elixir.chunk import Chunk, ChunkGroup
+from elixir.chunk import Chunk
 from elixir.utils import gpu_device
 
 from .module import ElixirModule
 
-_AVAIL_OPTIM_LIST = {FusedAdam, CPUAdam, HybridAdam}
+_AVAIL_OPTIM_LIST = {ColoOptimizer.FusedAdam, ColoOptimizer.CPUAdam, ColoOptimizer.HybridAdam}
 
 
 class OptimState(Enum):
@@ -22,11 +22,11 @@ class OptimState(Enum):
     UNSCALED = 1
 
 
-class ElixirOptimizer(ColossalaiOptimizer):
+class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
 
     def __init__(self,
                  module: ElixirModule,
-                 optimizer: Optimizer,
+                 optimizer: torch.optim.Optimizer,
                  initial_scale: float = 65536,
                  min_scale: float = 1,
                  growth_factor: float = 2,
@@ -60,25 +60,29 @@ class ElixirOptimizer(ColossalaiOptimizer):
         self.__init__optimizer()
 
         # Grad scaler
-        self.grad_scaler = DynamicGradScaler(initial_scale=initial_scale,
-                                             min_scale=min_scale,
-                                             growth_factor=growth_factor,
-                                             backoff_factor=backoff_factor,
-                                             growth_interval=growth_interval,
-                                             hysteresis=hysteresis,
-                                             max_scale=max_scale)
-        self._found_overflow: torch.Tensor = torch.zeros(1, dtype=torch.int64, device=gpu_device())
+        self.grad_scaler: BaseGradScaler = None
+        if module.use_amp:
+            self.grad_scaler = DynamicGradScaler(initial_scale=initial_scale,
+                                                 min_scale=min_scale,
+                                                 growth_factor=growth_factor,
+                                                 backoff_factor=backoff_factor,
+                                                 growth_interval=growth_interval,
+                                                 hysteresis=hysteresis,
+                                                 max_scale=max_scale)
+        else:
+            self.grad_scaler = ConstantGradScaler(1.0)
+        self._comm_buffer: torch.Tensor = torch.zeros(1, dtype=torch.float, device=gpu_device())
 
     def _set_grad_ptr(self):
         for group in self.param_groups:
             for fake_param in group['params']:
-                chunk32 = self.param_to_chunk32[fake_param]
+                optim_chunk = self.param_to_optim_chunk[fake_param]
                 begin, end = self.param_to_range[fake_param]
-                chunk16 = chunk32.paired_chunk
+                param_chunk = optim_chunk.paired_chunk
 
-                fake_param.data = chunk16.payload[begin:end]
+                fake_param.data = param_chunk.shard[begin:end]
                 fake_param.grad = fake_param.data
-                fake_param.data = chunk32.payload[begin:end]
+                fake_param.data = optim_chunk.shard[begin:end]
 
     def _update_fp16_params(self):
         none_tensor = torch.empty([0])
@@ -87,43 +91,34 @@ class ElixirOptimizer(ColossalaiOptimizer):
                 assert fake_param.grad is None
                 fake_param.data = none_tensor.to(fake_param.device)
 
-        for chunk16 in self.chunk16_set:
-            chunk16.optim_update()
+        for param_chunk in self.param_chunk_set:
+            param_chunk.optim_update()
 
-    def _check_overflow(self):
-        # clear previous overflow record
-        self._found_overflow.fill_(self.module.overflow_counter)
-
-        # all-reduce across global group
-        dist.all_reduce(self._found_overflow)
-
-        return self._found_overflow.item() > 0
+    def _check_overflow(self) -> bool:
+        # calculate the overflow counter
+        overflow_counter = 0
+        for param_chunk in self.param_chunk_set:
+            overflow_counter += int(param_chunk.overflow)
+        return overflow_counter > 0
 
     def _clear_global_norm(self) -> None:
-        for c16 in self.chunk16_set:
-            c16.l2_norm = None
+        for param_chunk in self.param_chunk_set:
+            param_chunk.l2_norm = None
 
     def _calc_global_norm(self) -> float:
-        norm_sqr: float = 0.0
-        group_to_norm = dict()
-        for c16 in self.chunk16_set:
-            assert c16.l2_norm is not None
+        group_to_norm = defaultdict(float)
+        for param_chunk in self.param_chunk_set:
+            assert param_chunk.l2_norm is not None
+            assert not param_chunk.is_replica
 
-            if c16.is_gathered:
-                norm_sqr += c16.l2_norm
-            else:
-                # this chunk is sharded, use communication to collect total norm
-                if c16.torch_pg not in group_to_norm:
-                    group_to_norm[c16.torch_pg] = 0.0
-                group_to_norm[c16.torch_pg] += c16.l2_norm
+            group_to_norm[param_chunk.torch_pg] += param_chunk.l2_norm
+            param_chunk.l2_norm = None    # clear l2 norm
 
-            c16.l2_norm = None    # clear l2 norm
-
-        comm_buffer = torch.zeros(1, dtype=torch.float, device=get_current_device())
+        norm_sqr = 0.0
         for group, part_norm in group_to_norm.items():
-            comm_buffer.fill_(part_norm)
-            dist.all_reduce(comm_buffer, group=group)
-            norm_sqr += comm_buffer.item()
+            self._comm_buffer.fill_(part_norm)
+            dist.all_reduce(self._comm_buffer, group=group)
+            norm_sqr += self._comm_buffer.item()
 
         global_norm = math.sqrt(norm_sqr)
         return global_norm
@@ -131,9 +126,9 @@ class ElixirOptimizer(ColossalaiOptimizer):
     def _get_combined_scale(self):
         loss_scale = 1
 
-        if self.optim_state == OptimState.SCALED:
-            loss_scale = self.loss_scale
-            self.optim_state = OptimState.UNSCALED
+        assert self.optim_state == OptimState.SCALED
+        loss_scale = self.loss_scale
+        self.optim_state = OptimState.UNSCALED
 
         combined_scale = loss_scale
         if self.clipping_flag:
@@ -152,18 +147,16 @@ class ElixirOptimizer(ColossalaiOptimizer):
         return self.grad_scaler.scale.item()
 
     def zero_grad(self, *args, **kwargs):
-        self.module.overflow_counter = 0
         return self.optim.zero_grad(set_to_none=True)
 
     def step(self, *args, **kwargs):
-        self._maybe_move_fp32_params()
         self._set_grad_ptr()
-
         found_inf = self._check_overflow()
+
         if found_inf:
             self.optim_state = OptimState.UNSCALED    # no need to unscale grad
             self.grad_scaler.update(found_inf)    # update gradient scaler
-            self._logger.info(f'Found overflow. Skip step')
+            # self._logger.info(f'Found overflow. Skip step')
             self._clear_global_norm()    # clear recorded norm
             self.zero_grad()    # reset all gradients
             self._update_fp16_params()
@@ -196,20 +189,10 @@ class ElixirOptimizer(ColossalaiOptimizer):
         self.optim_state = OptimState.SCALED
         self.module.backward_by_grad(tensor, grad)
 
-    def _register_states_(self):
-        for group in self.optim.param_groups:
-            for p in group['params']:
-                state = self.optim.state[p]
-                for val in state.values():
-                    if isinstance(val, torch.Tensor):
-                        self.chunk_manager.add_extern_static_tensor(val)
-
     def __init__optimizer(self):
 
         def get_range_pair(local_chunk: Chunk, local_param: Parameter):
             param_info = local_chunk.tensors_info[local_param]
-            if local_chunk.keep_gathered:
-                return param_info.offset, param_info.end
             begin = max(0, param_info.offset - local_chunk.shard_begin)
             end = min(local_chunk.shard_size, param_info.end - local_chunk.shard_begin)
             return begin, end
@@ -222,13 +205,13 @@ class ElixirOptimizer(ColossalaiOptimizer):
                     continue
 
                 param_chunk = self.module.fetcher.get_one_chunk(param)
-                range_pair = get_range_pair(chunk16, param)
+                range_pair = get_range_pair(param_chunk, param)
                 if range_pair[0] >= range_pair[1]:
                     continue
 
-                grad_device = self.module.grads_device[param]
+                grad_device = param_chunk.shard.device
                 fake_param = torch.nn.Parameter(torch.empty([0], device=grad_device))
-                self.param_to_chunk32[fake_param] = chunk16.paired_chunk
+                self.param_to_optim_chunk[fake_param] = param_chunk.paired_chunk
                 self.param_to_range[fake_param] = range_pair
 
                 fake_params_list.append(fake_param)
