@@ -70,7 +70,7 @@ class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
                                                  hysteresis=hysteresis,
                                                  max_scale=max_scale)
         else:
-            self.grad_scaler = ConstantGradScaler(1.0)
+            self.grad_scaler = ConstantGradScaler(1.0, verbose=False)
         self._comm_buffer: torch.Tensor = torch.zeros(1, dtype=torch.float, device=gpu_device())
 
     def _set_grad_ptr(self):
@@ -168,7 +168,6 @@ class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
         self.grad_scaler.update(found_inf)
 
         ret = self.optim.step(div_scale=combined_scale, *args, **kwargs)
-        self._register_states()
         self.zero_grad()
         self._update_fp16_params()
         return ret
@@ -197,7 +196,7 @@ class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
             end = min(local_chunk.shard_size, param_info.end - local_chunk.shard_begin)
             return begin, end
 
-        for group in self.optimizer.param_groups:
+        for group in self.param_groups:
             fake_params_list = list()
 
             for param in group['params']:

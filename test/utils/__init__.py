@@ -1,7 +1,13 @@
 import torch
+from torch.testing import assert_close
 
 from . import gpt, mlp, resnet, small
 from .registry import TEST_MODELS
+
+
+def allclose(ta, tb, **kwargs):
+    assert_close(ta, tb, **kwargs)
+    return True
 
 
 def assert_dict_keys(test_dict, keys):
@@ -19,4 +25,5 @@ def assert_dict_values(da, db, fn):
         u = db.get(k)
         if u.device != v.device:
             v = v.to(u.device)
+        # print(f"checking key {k}: {u.shape} vs {v.shape}")
         assert fn(u.data, v.data)
