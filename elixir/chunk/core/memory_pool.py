@@ -140,7 +140,6 @@ class MemoryPool(object):
     def free_public_block(self, block: TensorBlock):
         assert isinstance(block, PublicBlock)
         assert block in self.public_used_blocks
-        torch.zero_(block.payload)
 
         self.public_free_cnt += 1
         self.public_used_cnt -= 1
