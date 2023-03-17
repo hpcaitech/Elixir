@@ -25,7 +25,23 @@ class TensorInfo:
 
 
 class Chunk:
-    # TODO: add docstring
+    """Chunk is a type of data structure to store tensors.
+    It allows us to store a sequence of tensors into one continuous memory block.
+    Moreover, Chunk manages the storage of tensors in a distributed way.
+    Normally, a chunk is scattered across its process group.
+    When a tensor in this chunk should be used later, the chunk can be gathered by access_chunk.
+    When the training is done, the chunk can be scattered by reduce_chunk.
+
+    args:
+        rcache: the memory pool to store replicated chunks
+        chunk_size: the size of the chunk
+        chunk_dtype: the dtype of the chunk
+        process_group: the torch communication group of the chunk
+        temp_device: the device to store the temporary chunk when initializing
+        shard_device: the device to store the shard of the scattered chunk
+        rcache_fused: whether this chunk is fused in rcache without eviction
+        cpu_pin_memory: whether this chunk use cpu pin memory for its shard
+    """
     total_count = 0
 
     def __init__(
