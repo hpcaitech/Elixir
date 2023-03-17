@@ -1,6 +1,7 @@
 import copy
 import os
 from functools import partial
+from test.chunk.fetcher_utils import hook_transform
 from test.utils import TEST_MODELS
 
 import pytest
@@ -10,7 +11,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.testing import assert_close
 
 from elixir.chunk import ChunkGroup
-from elixir.hook import hook_transform
 from elixir.utils import init_distributed, seed_all
 
 
@@ -59,7 +59,7 @@ def run_dist(rank, world_size):
     exam_chunk_fetcher(nproc=world_size, group=dist.GroupMember.WORLD)
 
 
-@pytest.mark.skip(reason='remove temp.py in elixir.hook and use ElixirModule instead')
+@pytest.mark.dist
 @pytest.mark.parametrize('world_size', [1, 2, 4])
 def test_chunk_fetcher(world_size):
     run_func = partial(run_dist, world_size=world_size)

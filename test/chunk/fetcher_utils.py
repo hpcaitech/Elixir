@@ -6,9 +6,8 @@ import torch.nn as nn
 
 from elixir.chunk import BlockRequire, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler
+from elixir.hook import BufferStore, HookParam
 from elixir.parameter import OutplaceTensor
-
-from .parameter import HookParam
 
 
 def to_divide(a: int, b: int):
@@ -48,8 +47,9 @@ def hook_transform(model: nn.Module, process_group: dist.ProcessGroupGloo):
     # initialize chunk fetcher
     scheduler = FIFOScheduler()
     fetcher = ChunkFetcher(scheduler, cg)
+    buffer = BufferStore(0, torch.float32)
     # register fetcher and gradient handler
-    HookParam.attach_fetcher(fetcher)
+    HookParam.attach_fetcher(fetcher, buffer)
     for param in model.parameters():
         param.register_hook(partial(grad_handler, param=param, fetcher=fetcher))
         param.__class__ = HookParam
