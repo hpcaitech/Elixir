@@ -147,7 +147,6 @@ class ChunkGroup(object):
         self.inside_check(chunk)
         assert self.is_accessed(chunk)
         assert chunk.reduce_check
-        print('REDUCE', chunk.chunk_id)
 
         block = chunk.reduce_chunk()
         if block:

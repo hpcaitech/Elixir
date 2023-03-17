@@ -76,7 +76,7 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2261):
 
 
 def exam_modules_fwd_bwd(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('small')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     exam_one_module_fwd_bwd(builder, train_iter, nproc, group)
 
 
@@ -87,8 +87,8 @@ def run_dist(rank, world_size):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = str(29512)
     init_distributed()
-    # exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=False)
-    # exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=True)
+    exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=False)
+    exam_module_init(nproc=world_size, group=dist.GroupMember.WORLD, grad_flag=True)
     exam_modules_fwd_bwd(nproc=world_size, group=dist.GroupMember.WORLD)
 
 

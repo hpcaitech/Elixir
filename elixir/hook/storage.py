@@ -1,7 +1,7 @@
 import torch
 from torch.autograd.profiler_util import _format_memory
 
-from elixir import gpu_device
+from elixir.utils import gpu_device
 
 
 class BufferStore(object):

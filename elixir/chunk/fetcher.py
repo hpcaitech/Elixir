@@ -94,14 +94,14 @@ class ChunkFetcher(object):
             # if the rcache is not enough, just release a chunk
             if not self.group.rcache_enough_check(chunk):
                 maybe_chunk = self.scheduler.top()
-                print(f'Evicting {chunk.chunk_id} -> {maybe_chunk.chunk_id}')
+                # print(f'Evicting {chunk.chunk_id} -> {maybe_chunk.chunk_id}')
                 if maybe_chunk is None:
                     raise RuntimeError('R cache is not enough. Try to allocate more.')
                 self.scheduler.remove(maybe_chunk)
                 self.group.release_chunk(maybe_chunk)
 
+            # print('Accessing', chunk.chunk_id)
             self.group.access_chunk(chunk)
-            print('ACCESS', chunk.chunk_id, chunk.rcb.payload.data_ptr())
 
     def reduce_chunk(self, chunk: Chunk) -> bool:
         if not chunk.reduce_check:
