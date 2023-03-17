@@ -3,7 +3,7 @@ from collections import defaultdict
 from enum import Enum
 from typing import Dict, Set, Tuple
 
-import colossalai.nn.optimizer as ColoOptimizer
+import colossalai.nn.optimizer as colo_optim
 import torch
 import torch.distributed as dist
 from colossalai.amp.naive_amp.grad_scaler import BaseGradScaler, ConstantGradScaler, DynamicGradScaler
@@ -14,7 +14,7 @@ from elixir.utils import gpu_device
 
 from .module import ElixirModule
 
-_AVAIL_OPTIM_LIST = {ColoOptimizer.FusedAdam, ColoOptimizer.CPUAdam, ColoOptimizer.HybridAdam}
+_AVAIL_OPTIM_LIST = {colo_optim.FusedAdam, colo_optim.CPUAdam, colo_optim.HybridAdam}
 
 
 class OptimState(Enum):
@@ -22,7 +22,7 @@ class OptimState(Enum):
     UNSCALED = 1
 
 
-class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
+class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
     """A wrapper for optimizers. Users should notice that one specific ElixirOptimizer is strictly
     corresponding to one ElixirModule. Currently only a group of optimizers are supported in ElixirOptimizer.
     The reason is that ElixirOptimizer only support element-wise optimizers now.
