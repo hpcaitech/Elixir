@@ -23,6 +23,15 @@ class OptimState(Enum):
 
 
 class ElixirOptimizer(ColoOptimizer.ColossalaiOptimizer):
+    """A wrapper for optimizers. Users should notice that one specific ElixirOptimizer is strictly
+    corresponding to one ElixirModule. Currently only a group of optimizers are supported in ElixirOptimizer.
+    The reason is that ElixirOptimizer only support element-wise optimizers now.
+    We may enlarge the group of supported optimizers later.
+
+    Args:
+        optim: The torch optimizer instance.
+        module: The nn.Module instance wrapped as an ElixirModule.
+    """
 
     def __init__(self,
                  module: ElixirModule,

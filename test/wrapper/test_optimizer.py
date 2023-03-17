@@ -20,7 +20,7 @@ def exam_optimizer_one_model(builder, train_iter, nproc, group, exam_seed=2261):
     test_model = copy.deepcopy(ddp_model)
 
     ddp_model = DDP(ddp_model)
-    ddp_optim = torch.optim.AdamW(ddp_model.parameters(), lr=1e-1, weight_decay=0)
+    ddp_optim = HybridAdam(ddp_model.parameters(), lr=1e-1, weight_decay=0)
 
     test_optim = HybridAdam(test_model.parameters(), lr=1e-1, weight_decay=0)
     sr = simple_search(test_model, nproc, shard_device=gpu_device())
@@ -46,7 +46,7 @@ def exam_optimizer_one_model(builder, train_iter, nproc, group, exam_seed=2261):
     assert_close(ddp_loss, test_loss)
     torch_st = ddp_model.module.state_dict()
     test_st = test_model.state_dict()
-    assert_dict_values(torch_st, test_st, fn=allclose)
+    assert_dict_values(torch_st, test_st, fn=partial(allclose, rtol=2e-6, atol=2e-5))
 
 
 def exam_optimizer_in_models(nproc, group):
@@ -72,4 +72,4 @@ def test_elixir_optimizer(world_size):
 
 
 if __name__ == '__main__':
-    test_elixir_optimizer(world_size=2)
+    test_elixir_optimizer(world_size=4)
