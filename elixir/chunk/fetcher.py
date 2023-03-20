@@ -75,16 +75,25 @@ class ChunkFetcher(object):
     def fetch_chunks(self, chunks: list[Chunk]):
         # make step + 1
         self.step()
+
+        prefetch_hit = False
         # wait async prefetch
         if self.fetching_chunk is not None and self.fetching_chunk in chunks:
             self.wait_prefetch()
+            prefetch_hit = True
+        # filter accessed chunks
         scattered = self.filter_chunks(chunks)
-
         # sanity check: upload should wait for prefetch
         if self.fetching_chunk:
             assert len(scattered) == 0
         # all chunks are on the rcache
         if len(scattered) == 0:
+            # prefetch if there is a hit above
+            if prefetch_hit:
+                # wait async reduce
+                if self.reducing_chunk is not None:
+                    self.wait_reduce()
+                self.prefetch(chunks)
             return
 
         # wait async reduce
@@ -104,7 +113,7 @@ class ChunkFetcher(object):
             # print('Accessing', chunk.chunk_id)
             self.group.access_chunk(chunk)
 
-        if self.overlap_flag:
+        if self.overlap_flag and self.fetching_chunk is None:
             self.prefetch(chunks)
 
     def reduce_chunk(self, chunk: Chunk) -> bool:
@@ -137,7 +146,8 @@ class ChunkFetcher(object):
                 return
             # otherwise, release this chunk
             self.scheduler.remove(maybe_chunk)
-            self.group.release_chunk(maybe_chunk)
+            with torch.cuda.stream(self.prefetch_stream):
+                self.group.release_chunk(maybe_chunk)
 
         self.fetching_chunk = next_chunk
         with torch.cuda.stream(self.prefetch_stream):
