@@ -6,7 +6,9 @@ import torch
 import torch.nn as nn
 
 from elixir.chunk import BlockRequire, ChunkGroup, MemoryPool
+from elixir.tracer.param_tracer import generate_tf_order
 from elixir.tracer.utils import meta_copy
+from elixir.utils import print_rank_0
 
 from .result import ChunkPlan
 from .utils import to_meta_tensor
@@ -44,7 +46,11 @@ class SearchBase(ABC):
         self.param_per_step = None
         if self.prefetch_flag:
             assert inp is not None and step_fn is not None
-            # TODO(helson): add parameter order tracing
+            self.param_per_step = generate_tf_order(self.meta_module, inp, step_fn, dtype)
+            if self.verbose:
+                print_rank_0('Prefetch enabled: the called order of parameters')
+                for i, step in enumerate(self.param_per_step):
+                    print_rank_0(f'step {i}: {step}')
 
     @abstractmethod
     def private_truncate(self, param: nn.Parameter) -> int:
@@ -88,6 +94,11 @@ class SearchBase(ABC):
                                    kwargs=chunk_kwargs)
             plans.append(chunk_plan)
 
+        if self.verbose:
+            print_rank_0(f'Chunk plans: total {len(plans)} chunks')
+            for i, plan in enumerate(plans):
+                print_rank_0(f'plan {i}: {plan}')
+
         return plans
 
     def allocate_chunk_group(self, chunk_plans: list[ChunkPlan]) -> ChunkGroup:
@@ -102,4 +113,10 @@ class SearchBase(ABC):
                     public_block_size=self.public_block_size,
                     public_block_number=self.public_block_number,
                     private_block_list=block_require_list)
+
+        if self.verbose:
+            print_rank_0(
+                f'Memory pool (rcache): {mp}\n\tblock size -> {mp.public_block_size}, block number -> {mp.public_free_cnt}'
+            )
+
         return ChunkGroup(mp)

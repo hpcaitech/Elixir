@@ -62,6 +62,15 @@ def init_distributed():
     seed_all(1024)
 
 
+def print_rank_0(*args, **kwargs):
+    if dist.is_initialized():
+        if dist.get_rank() == 0:
+            print(*args, **kwargs)
+        dist.barrier()
+    else:
+        print(*args, **kwargs)
+
+
 def get_model_size(model: nn.Module):
     total_numel = 0
     for module in model.modules():

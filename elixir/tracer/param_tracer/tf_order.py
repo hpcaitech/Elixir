@@ -91,13 +91,18 @@ class Record(nn.Parameter):
         Record.record_steps.append(record_dict)
 
 
-def generate_tf_order(model: nn.Module, inp: Dict, step_fn: Callable):
+def generate_tf_order(model: nn.Module, inp: Dict, step_fn: Callable, dtype: torch.dtype = torch.float):
     assert isinstance(inp, dict), 'The example input should be a dictionary'
 
     Record.reset()
 
     def mtensor_trans(t: torch.Tensor):
-        meta_t = torch.empty_like(t, device='meta')
+        if t.is_floating_point():
+            meta_dtype = dtype
+        else:
+            meta_dtype = t.dtype
+
+        meta_t = torch.empty_like(t, dtype=meta_dtype, device='meta')
         if isinstance(t, nn.Parameter):
             meta_t = Record(meta_t)
             meta_t.requires_grad = t.requires_grad
@@ -108,8 +113,13 @@ def generate_tf_order(model: nn.Module, inp: Dict, step_fn: Callable):
         param.param_name = name
 
     def input_trans(t):
-        if torch.is_tensor(t):
-            meta_t = torch.empty_like(t, device='meta', requires_grad=t.requires_grad)
+        if isinstance(t, torch.Tensor):
+            if t.is_floating_point():
+                meta_dtype = dtype
+            else:
+                meta_dtype = t.dtype
+
+            meta_t = torch.empty_like(t, dtype=meta_dtype, device='meta', requires_grad=t.requires_grad)
             return meta_t
         return t
 

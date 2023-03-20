@@ -7,10 +7,26 @@ from elixir.search import simple_search
 from elixir.utils import gpu_device
 
 
+def step_fn(model, inp):
+    model(**inp).sum().backward()
+
+
 def test_simple_search():
-    builder, *_ = TEST_MODELS.get_func('small')()
+    builder, data_iter, *_ = TEST_MODELS.get_func('small')()
     model = builder()
-    sr = simple_search(model, 1, split_number=5, shard_device=gpu_device())
+
+    data, label = next(data_iter)
+    example_input = dict(x=data)
+
+    sr = simple_search(model,
+                       1,
+                       split_number=5,
+                       shard_device=gpu_device(),
+                       prefetch=True,
+                       verbose=True,
+                       inp=example_input,
+                       step_fn=step_fn)
+
     chunk_plans = deepcopy(sr.param_chunk_plans)
     private_plan = chunk_plans.pop(0)
     assert private_plan.name_list == ['embed.weight']
