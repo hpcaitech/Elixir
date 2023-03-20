@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Tuple, Union
+from typing import Callable, Dict
 
 import torch
 import torch.nn as nn
@@ -6,50 +6,7 @@ from torch.utils._pytree import tree_map
 
 from elixir.parameter import is_no_hook_op
 from elixir.tracer.utils import meta_copy
-from elixir.utils import gpu_device, no_dispatch, normalize_tuple
-
-
-class FakeCudaTensor(torch.Tensor):
-    elem: torch.Tensor
-
-    __slots__ = ['elem']
-
-    @staticmethod
-    def __new__(cls, elem, *args, **kwargs):
-        r = torch.Tensor._make_wrapper_subclass(
-            cls,
-            elem.size(),
-            strides=elem.stride(),
-            storage_offset=elem.storage_offset(),
-        # TODO: clone strides and storage aliasing
-            dtype=elem.dtype,
-            layout=elem.layout,
-            device=gpu_device(),
-            requires_grad=elem.requires_grad)
-        r.elem = elem.to('meta')
-        return r
-
-    def __repr__(self):
-        return f'FCT({self.elem})'
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-
-        def unwrap(x):
-            return x.elem if isinstance(x, FakeCudaTensor) else x
-
-        def wrap(x):
-            return FakeCudaTensor(x) if isinstance(x, torch.Tensor) else x
-
-        with no_dispatch():
-            res = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
-        outs = normalize_tuple(res)
-        res = tree_map(wrap, outs)
-
-        if len(res) == 1:
-            return res[0]
-        else:
-            return res
+from elixir.utils import no_dispatch, normalize_tuple
 
 
 class PostFwdPreBwd(torch.autograd.Function):
@@ -65,20 +22,12 @@ class PostFwdPreBwd(torch.autograd.Function):
         return (None, *grads)
 
 
-class Record(FakeCudaTensor, nn.Parameter):
+class Record(nn.Parameter):
     record_steps: Dict = None
 
     def __new__(cls, elem):
         assert elem.device.type == 'meta', f'device type: {elem.device.type}'
-        r = torch.Tensor._make_wrapper_subclass(cls,
-                                                elem.size(),
-                                                strides=elem.stride(),
-                                                storage_offset=elem.storage_offset(),
-                                                dtype=elem.dtype,
-                                                layout=elem.layout,
-                                                device=gpu_device(),
-                                                requires_grad=True)
-        r.elem = elem
+        r = torch.Tensor._make_subclass(cls, elem)
         return r
 
     @classmethod
@@ -118,6 +67,14 @@ class Record(FakeCudaTensor, nn.Parameter):
         else:
             return ret
 
+    @classmethod
+    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+        # notice: we should disable __torch_function__ here
+        # otherwise, unexpected operations are called inside meta kernels
+        with torch._C.DisableTorchFunction():
+            with no_dispatch():
+                return func(*args, **kwargs)
+
     @staticmethod
     def reset():
         Record.record_steps = list()
@@ -130,19 +87,20 @@ class Record(FakeCudaTensor, nn.Parameter):
 
     @staticmethod
     def record_params(params):
-        record_dict = {p.param_name: p for p in params}
+        record_dict = {p.param_name for p in params}
         Record.record_steps.append(record_dict)
 
 
-def generate_tf_order(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn: Callable):
+def generate_tf_order(model: nn.Module, inp: Dict, step_fn: Callable):
+    assert isinstance(inp, dict), 'The example input should be a dictionary'
+
     Record.reset()
 
-    def mtensor_trans(t):
-        meta_t = t.data.to('meta')
+    def mtensor_trans(t: torch.Tensor):
+        meta_t = torch.empty_like(t, device='meta')
         if isinstance(t, nn.Parameter):
             meta_t = Record(meta_t)
-        else:
-            meta_t = FakeCudaTensor(meta_t)
+            meta_t.requires_grad = t.requires_grad
         return meta_t
 
     model = meta_copy(model, mtensor_trans)
@@ -151,16 +109,13 @@ def generate_tf_order(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn
 
     def input_trans(t):
         if torch.is_tensor(t):
-            meta_t = t.data.to('meta')
-            meta_t.requires_grad = t.requires_grad
-            meta_t = FakeCudaTensor(meta_t)
+            meta_t = torch.empty_like(t, device='meta', requires_grad=t.requires_grad)
             return meta_t
         return t
 
-    inp = normalize_tuple(inp)
     inp = tree_map(input_trans, inp)
 
-    step_fn(model, *inp)
+    step_fn(model, inp)
 
     ret = Record.steps()
     return ret

@@ -5,7 +5,14 @@ debug_flag = False
 
 white_list = {torch.Tensor.__getitem__}
 
-fake_allowed = {torch.Tensor.numel, torch.Tensor.size, torch.Tensor.stride, torch.Tensor.storage_offset}
+fake_allowed = {
+    # pre-commit: don't move
+    torch.Tensor.numel,
+    torch.Tensor.size,
+    torch.Tensor.stride,
+    torch.Tensor.storage_offset,
+    torch.Tensor.is_floating_point
+}
 
 inpalce_mapping = {
     torch.Tensor.add_: torch.Tensor.add,
