@@ -42,6 +42,7 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
     def one_step(local_model, local_input):
         loss = local_model(**local_input).sum()
         loss.backward()
+        torch.cuda.synchronize()
         return loss
 
     ddp_model = builder().cuda()
@@ -74,7 +75,7 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
 
 
 def exam_modules_fwd_bwd(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('small')()
+    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
     exam_one_module_fwd_bwd(builder, train_iter, nproc, group)
 
 
