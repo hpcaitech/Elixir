@@ -29,7 +29,7 @@ class SearchSimple(SearchBase):
     def public_trucate(self, length: int) -> int:
         return to_divide(length, self.default_group_size)
 
-    def search(self, split_number, allocate_factor) -> Tuple:
+    def search(self, split_number: int, allocate_factor: float) -> Tuple:
         # get multi-used parameters
         private_params = get_multi_used_params(self.meta_module)
         # get parameters used only one time
