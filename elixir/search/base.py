@@ -14,6 +14,14 @@ from .utils import to_meta_tensor
 
 class SearchBase(ABC):
     """A basic class for search algorithms.
+
+    args:
+        module: the model to be searched
+        dtype: the unified dtype of all parameters
+        prefetch: whether to prefetch chunks during training
+        verbose: whether to print search details
+        inp: a dictionary, the example input of the model
+        step_fn: the example step function of the model
     """
 
     def __init__(self,
@@ -33,25 +41,26 @@ class SearchBase(ABC):
         self.public_block_size = 1024
         self.public_block_number = 0
 
+        self.param_per_step = None
         if self.prefetch_flag:
             assert inp is not None and step_fn is not None
             # TODO(helson): add parameter order tracing
 
     @abstractmethod
-    def private_truncate(param: nn.Parameter) -> int:
+    def private_truncate(self, param: nn.Parameter) -> int:
         """A function used to truncate the length of a private chunk,
         which only contains one parameter.
         """
         pass
 
     @abstractmethod
-    def public_trucate(length: int) -> int:
+    def public_trucate(self, length: int) -> int:
         """A function used to trucate the length of all publick chunks
         """
         pass
 
     @abstractmethod
-    def search(*args, **kwargs) -> Tuple:
+    def search(self, *args, **kwargs) -> Tuple:
         """The core search function. It returns a tuple of a private group and public groups.
         """
         pass
