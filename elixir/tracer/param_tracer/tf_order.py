@@ -70,14 +70,17 @@ class Record(FakeCudaTensor, nn.Parameter):
 
     def __new__(cls, elem):
         assert elem.device.type == 'meta', f'device type: {elem.device.type}'
-        r = torch.Tensor._make_wrapper_subclass(cls,
-                                                elem.size(),
-                                                strides=elem.stride(),
-                                                storage_offset=elem.storage_offset(),
-                                                dtype=elem.dtype,
-                                                layout=elem.layout,
-                                                device=gpu_device(),
-                                                requires_grad=True)
+        r = torch.Tensor._make_wrapper_subclass(
+        # pre-commit: don't move
+            cls,
+            elem.size(),
+            strides=elem.stride(),
+            storage_offset=elem.storage_offset(),
+            dtype=elem.dtype,
+            layout=elem.layout,
+            device=gpu_device(),
+            requires_grad=True)
+
         r.elem = elem
         return r
 
@@ -130,7 +133,7 @@ class Record(FakeCudaTensor, nn.Parameter):
 
     @staticmethod
     def record_params(params):
-        record_dict = {p.param_name: p for p in params}
+        record_dict = {p.param_name for p in params}
         Record.record_steps.append(record_dict)
 
 
