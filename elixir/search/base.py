@@ -52,7 +52,7 @@ class SearchBase(ABC):
 
     @abstractmethod
     def search(*args, **kwargs) -> Tuple:
-        """The core search function. It returns a list of chunk plans.
+        """The core search function. It returns a tuple of a private group and public groups.
         """
         pass
 
