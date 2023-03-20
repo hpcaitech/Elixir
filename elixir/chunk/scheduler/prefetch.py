@@ -73,7 +73,7 @@ class PrefetchScheduler(ChunkScheduler):
 
     def get_next_chunk(self, chunks: List[Chunk]):
         self.search_step = max(self.search_step, self.current_step + 1)
-        while self.search_step < self.process_steps:
+        while self.search_step < self.total_steps:
             c_list = self.chunks_per_step[self.search_step]
             for c in c_list:
                 if c not in chunks:
