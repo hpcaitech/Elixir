@@ -129,7 +129,18 @@ class ElixirModule(nn.Module):
     def __init_chunk_fetcher(self, sr: SearchResult, prefetch: bool):
         scheduler = None
         if prefetch:
-            scheduler = PrefetchScheduler(process_list=sr.param_called_per_step)
+            assert sr.param_called_per_step is not None
+
+            chunk_called_per_step = list()
+            for step in sr.param_called_per_step:
+                step_set = set()
+                for name in step:
+                    param = self.grad_state_dict[name]
+                    chunk = self.param_chunk_group.ten_to_chunk[param]
+                    step_set.add(chunk)
+                chunk_called_per_step.append(step_set)
+
+            scheduler = PrefetchScheduler(chunk_called_per_step=chunk_called_per_step)
         else:
             scheduler = FIFOScheduler()
 
@@ -191,7 +202,9 @@ class ElixirModule(nn.Module):
 
     def backward(self, loss: torch.Tensor):
         loss.backward()
-
+        # wait for gradient reduce
+        self.fetcher.wait_reduce()
+        # reset all attributes
         self.module.zero_grad(set_to_none=True)
         self.fetcher.clear()
         HookParam.release_fetcher()

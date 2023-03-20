@@ -103,6 +103,9 @@ class ChunkFetcher(object):
             # print('Accessing', chunk.chunk_id)
             self.group.access_chunk(chunk)
 
+        if self.overlap_flag:
+            self.prefetch(chunks)
+
     def reduce_chunk(self, chunk: Chunk) -> bool:
         if not chunk.reduce_check:
             return False
