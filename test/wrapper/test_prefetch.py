@@ -68,7 +68,8 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
 
     seed_all(exam_seed, cuda_deterministic=True)
     ddp_loss = one_step(ddp_model, example_input)
-    test_loss = one_step(test_model, example_input)
+    test_loss = test_model(**example_input).sum()
+    test_model.backward(test_loss)
 
     assert_close(ddp_loss, test_loss)
     check_gradient(ddp_model.module, test_model)
@@ -97,4 +98,4 @@ def test_module_prefetch(world_size):
 
 
 if __name__ == '__main__':
-    test_module_prefetch(world_size=2)
+    test_module_prefetch(world_size=4)

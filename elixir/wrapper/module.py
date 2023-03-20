@@ -50,6 +50,7 @@ class ElixirModule(nn.Module):
         self.dtype = dtype
         self.use_amp = (dtype == torch.float16)
         self.process_group = process_group
+        self.prefetch_flag = prefetch
 
         self.no_grad_state_dict = dict()
         self.grad_state_dict = dict()
@@ -203,7 +204,8 @@ class ElixirModule(nn.Module):
     def backward(self, loss: torch.Tensor):
         loss.backward()
         # wait for gradient reduce
-        self.fetcher.wait_reduce()
+        if self.prefetch_flag:
+            torch.cuda.synchronize()
         # reset all attributes
         self.module.zero_grad(set_to_none=True)
         self.fetcher.clear()

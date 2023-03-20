@@ -55,6 +55,7 @@ class ChunkFetcher(object):
 
     def wait_reduce(self):
         assert self.reducing_chunk is not None
+        self.prefetch_stream.wait_stream(self.reduce_stream)
         torch.cuda.current_stream().wait_stream(self.reduce_stream)
         self.reducing_chunk = None
 
