@@ -48,7 +48,7 @@ def exam_prefetch(nproc, group):
 
     chunk_called_per_step = [[c0], [c1], [c2], [c0], [c0], [c1], [c2], [c2], [c1], [c0]]
 
-    sdl = PrefetchScheduler(process_list=chunk_called_per_step)
+    sdl = PrefetchScheduler(chunk_called_per_step=chunk_called_per_step)
     print(sdl.next_step_dict)
     sdl.reset()
 
@@ -102,6 +102,9 @@ def exam_prefetch(nproc, group):
     sdl.step()
     sdl.add(c0)
     assert sdl.top() == c0
+
+    sdl.remove(c0)
+    sdl.clear()
 
 
 def run_dist(rank, world_size):
