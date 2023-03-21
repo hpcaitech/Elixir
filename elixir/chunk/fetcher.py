@@ -112,10 +112,11 @@ class ChunkFetcher(object):
             # print('Accessing', chunk.chunk_id)
             self.group.access_chunk(chunk)
 
-        if self.overlap_flag and self.fetching_chunk is not None:
+        if self.overlap_flag:
+            assert self.fetching_chunk is None
             self.prefetch(chunks)
 
-    def reduce_chunk(self, chunk: Chunk) -> bool:
+    def reduce_chunk(self, chunk: Chunk):
         if not chunk.reduce_check:
             return False
 
@@ -130,8 +131,6 @@ class ChunkFetcher(object):
             if self.overlap_flag:
                 self.wait_main()
             self.group.reduce_chunk(chunk)
-
-        return True
 
     def prefetch(self, chunks: list[Chunk]):
         # TODO: this instruction
@@ -156,7 +155,7 @@ class ChunkFetcher(object):
             self.wait_main()
             self.fetching_chunk = next_chunk
             if evict_chunk is not None:
-                self.group.release_chunk()
+                self.group.release_chunk(evict_chunk)
             self.group.access_chunk(next_chunk)
 
     def step(self):
