@@ -14,9 +14,10 @@ class ChunkFetcher(object):
         self.current_step = -1
 
         self.overlap_flag = overlap
+        self.main_stream = torch.cuda.current_stream()
         self.fetching_chunk = None
         self.prefetch_stream = torch.cuda.Stream()
-        self.reducing_chunk = None
+        self.reducing_flag = False
         self.reduce_stream = torch.cuda.Stream()
 
     def reset(self):
@@ -49,15 +50,17 @@ class ChunkFetcher(object):
                 self.scheduler.add(chunk)
 
     def wait_prefetch(self):
-        assert self.fetching_chunk is not None
-        torch.cuda.current_stream().wait_stream(self.prefetch_stream)
-        self.fetching_chunk = None
+        if self.fetching_chunk is not None:
+            torch.cuda.current_stream().wait_stream(self.prefetch_stream)
+            self.fetching_chunk = None
 
     def wait_reduce(self):
-        assert self.reducing_chunk is not None
-        self.prefetch_stream.wait_stream(self.reduce_stream)
-        torch.cuda.current_stream().wait_stream(self.reduce_stream)
-        self.reducing_chunk = None
+        if self.reducing_flag:
+            torch.cuda.current_stream().wait_stream(self.reduce_stream)
+            self.reducing_flag = False
+
+    def wait_main(self):
+        torch.cuda.current_stream().wait_stream(self.main_stream)
 
     def get_one_chunk(self, tensor: torch.Tensor) -> Chunk:
         return self.group.ten_to_chunk.get(tensor)
@@ -84,21 +87,17 @@ class ChunkFetcher(object):
         # filter accessed chunks
         scattered = self.filter_chunks(chunks)
         # sanity check: upload should wait for prefetch
-        if self.fetching_chunk:
+        if self.fetching_chunk is not None:
             assert len(scattered) == 0
         # all chunks are on the rcache
         if len(scattered) == 0:
             # prefetch if there is a hit above
             if prefetch_hit:
-                # wait async reduce
-                if self.reducing_chunk is not None:
-                    self.wait_reduce()
                 self.prefetch(chunks)
             return
 
         # wait async reduce
-        if self.reducing_chunk is not None:
-            self.wait_reduce()
+        self.wait_reduce()
 
         for chunk in scattered:
             # if the rcache is not enough, just release a chunk
@@ -113,7 +112,7 @@ class ChunkFetcher(object):
             # print('Accessing', chunk.chunk_id)
             self.group.access_chunk(chunk)
 
-        if self.overlap_flag and self.fetching_chunk is None:
+        if self.overlap_flag and self.fetching_chunk is not None:
             self.prefetch(chunks)
 
     def reduce_chunk(self, chunk: Chunk) -> bool:
@@ -122,12 +121,14 @@ class ChunkFetcher(object):
 
         if self.overlap_flag:
             context = torch.cuda.stream
-            self.reducing_chunk = chunk
+            self.reducing_flag = True
         else:
             context = nullcontext
 
         self.scheduler.remove(chunk)
         with context(self.reduce_stream):
+            if self.overlap_flag:
+                self.wait_main()
             self.group.reduce_chunk(chunk)
 
         return True
@@ -139,6 +140,7 @@ class ChunkFetcher(object):
         if next_chunk is None or self.group.is_accessed(next_chunk):
             return
 
+        evict_chunk = None
         if not self.group.rcache_enough_check(next_chunk):
             maybe_chunk = self.scheduler.top()
             # if there is no chunk can be evicted, just return
@@ -146,11 +148,15 @@ class ChunkFetcher(object):
                 return
             # otherwise, release this chunk
             self.scheduler.remove(maybe_chunk)
-            with torch.cuda.stream(self.prefetch_stream):
-                self.group.release_chunk(maybe_chunk)
+            evict_chunk = maybe_chunk
 
-        self.fetching_chunk = next_chunk
         with torch.cuda.stream(self.prefetch_stream):
+            if self.reducing_flag:
+                self.wait_reduce()
+            self.wait_main()
+            self.fetching_chunk = next_chunk
+            if evict_chunk is not None:
+                self.group.release_chunk()
             self.group.access_chunk(next_chunk)
 
     def step(self):
