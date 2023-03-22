@@ -122,7 +122,7 @@ class MemoryPool(object):
         self.__allocate_flag = True
 
     def __repr__(self) -> str:
-        return f'MP(public_space={_format_memory(self.public_space)}, private_space={self.private_space})'
+        return f'MP(public_space={_format_memory(self.public_space)}, private_space={_format_memory(self.private_space)})'
 
     def get_private_block(self, numel: int, dtype: torch.dtype):
         block_list = self.private_lookup_dict.get(BlockRequire(numel=numel, dtype=dtype))
