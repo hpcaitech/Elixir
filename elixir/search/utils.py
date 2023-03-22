@@ -17,7 +17,7 @@ def to_meta_tensor(t: torch.Tensor, dtype: torch.dtype = None) -> torch.Tensor:
     # pack it if t is a parameter
     # we should filter parameters with no grad
     if isinstance(t, nn.Parameter) and t.requires_grad:
-        meta_t = nn.Parameter(t)
+        meta_t = nn.Parameter(meta_t)
     return meta_t
 
 
@@ -62,5 +62,6 @@ def find_minimum_waste_size(numel_group_list: list[list[int]], min_range: int, m
         if current_waste < min_waste:
             best_size = test_size
             min_waste = current_waste
+        test_size += interval
 
     return best_size, min_waste
