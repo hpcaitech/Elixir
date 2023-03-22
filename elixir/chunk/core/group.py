@@ -143,16 +143,20 @@ class ChunkGroup(object):
         self.__remove_from_accset(chunk)
         return True
 
-    def reduce_chunk(self, chunk: Chunk) -> bool:
+    def reduce_chunk(self, chunk: Chunk, sync: bool = True) -> Optional[TensorBlock]:
         self.inside_check(chunk)
         assert self.is_accessed(chunk)
         assert chunk.reduce_check
 
-        block = chunk.reduce_chunk()
-        if block:
+        block = chunk.reduce_chunk(sync)
+        if block and sync:
+            # if synchronized, free the block into rcache
             self.rcache.free_public_block(block)
+            block = None
+
         self.__remove_from_accset(chunk)
-        return True
+
+        return block
 
     def tensor_trans_state(self, tensor: torch.Tensor, state: TensorState):
         chunk = self.ten_to_chunk.get(tensor)

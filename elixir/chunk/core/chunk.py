@@ -288,11 +288,6 @@ class Chunk:
             dist.reduce_scatter(buffer, input_list, group=self.torch_pg)
         self.__update_shard(self.rcb.payload, self.shard)
 
-        valid_tensor = buffer[:self.valid_end]
-        self.set_overflow_flag(valid_tensor)
-        if self.l2_norm_flag:
-            self.set_l2_norm(valid_tensor)
-
         self.is_replica = False
 
     def access_chunk(self, block: Optional[TensorBlock] = None):
@@ -323,7 +318,20 @@ class Chunk:
         self.rcb = None
         return block
 
-    def reduce_chunk(self) -> Optional[TensorBlock]:
+    def update_extra_reduce_info(self, block: Optional[TensorBlock]):
+        if self.rcache_fused:
+            assert block is None
+            block = self._my_block
+        else:
+            assert block is not None
+
+        buffer = block.payload[self.shard_begin:self.shard_end]
+        valid_tensor = buffer[:self.valid_end]
+        self.set_overflow_flag(valid_tensor)
+        if self.l2_norm_flag:
+            self.set_l2_norm(valid_tensor)
+
+    def reduce_chunk(self, sync: bool = True) -> Optional[TensorBlock]:
         """Reduce scatter all the gradients. It's an operation done in CUDA.
         """
         # sanity check
@@ -336,11 +344,13 @@ class Chunk:
         # reset the rcb pointer
         block = self.rcb
         self.rcb = None
-
         if self.rcache_fused:
-            return None
-        else:
-            return block
+            block = None
+
+        if sync:
+            self.update_extra_reduce_info(block)
+
+        return block
 
     def tensor_trans_state(self, tensor: torch.Tensor, tensor_state: TensorState) -> None:
         prev_state = self.tensors_info[tensor].state

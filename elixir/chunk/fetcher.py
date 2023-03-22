@@ -1,8 +1,8 @@
-from contextlib import nullcontext
+from typing import Optional
 
 import torch
 
-from .core import Chunk, ChunkGroup, TensorState
+from .core import Chunk, ChunkGroup, TensorBlock, TensorState
 from .scheduler import ChunkScheduler
 
 
@@ -15,9 +15,13 @@ class ChunkFetcher(object):
 
         self.overlap_flag = overlap
         self.main_stream = torch.cuda.current_stream()
-        self.fetching_chunk = None
+
+        self.predict_next_chunk: Optional[Chunk] = None
+        self.is_fetching: bool = False
         self.prefetch_stream = torch.cuda.Stream()
-        self.reducing_flag = False
+
+        self.reduced_chunk: Optional[Chunk] = None
+        self.reduced_block: Optional[TensorBlock] = None
         self.reduce_stream = torch.cuda.Stream()
 
     def reset(self):
@@ -25,6 +29,11 @@ class ChunkFetcher(object):
         self.current_step = -1
 
     def clear(self):
+        if self.overlap_flag:
+            torch.cuda.synchronize()
+            if self.reduced_chunk is not None:
+                self.reduce_call_back()
+
         self.scheduler.clear()
 
     def trans_to_compute(self, tensors: list[torch.Tensor]):
@@ -49,19 +58,6 @@ class ChunkFetcher(object):
             if chunk.scatter_check:
                 self.scheduler.add(chunk)
 
-    def wait_prefetch(self):
-        if self.fetching_chunk is not None:
-            torch.cuda.current_stream().wait_stream(self.prefetch_stream)
-            self.fetching_chunk = None
-
-    def wait_reduce(self):
-        if self.reducing_flag:
-            torch.cuda.current_stream().wait_stream(self.reduce_stream)
-            self.reducing_flag = False
-
-    def wait_main(self):
-        torch.cuda.current_stream().wait_stream(self.main_stream)
-
     def get_one_chunk(self, tensor: torch.Tensor) -> Chunk:
         return self.group.ten_to_chunk.get(tensor)
 
@@ -79,25 +75,28 @@ class ChunkFetcher(object):
         # make step + 1
         self.step()
 
-        prefetch_hit = False
-        # wait async prefetch
-        if self.fetching_chunk is not None and self.fetching_chunk in chunks:
-            self.wait_prefetch()
-            prefetch_hit = True
+        predict_hit = False
+        # try to prefetch the next chunk
+        if self.predict_next_chunk is not None and self.predict_next_chunk in chunks:
+            if self.is_fetching:
+                # prefetch hit, wait async prefetch
+                self.main_stream.wait_stream(self.prefetch_stream)
+                # clear prefetch information
+                self.predict_next_chunk = None
+                self.is_fetching = False
+
+            predict_hit = True
         # filter accessed chunks
         scattered = self.filter_chunks(chunks)
         # sanity check: upload should wait for prefetch
-        if self.fetching_chunk is not None:
+        if self.predict_next_chunk is not None:
             assert len(scattered) == 0
         # all chunks are on the rcache
         if len(scattered) == 0:
             # prefetch if there is a hit above
-            if prefetch_hit:
+            if predict_hit:
                 self.prefetch(chunks)
             return
-
-        # wait async reduce
-        self.wait_reduce()
 
         for chunk in scattered:
             # if the rcache is not enough, just release a chunk
@@ -113,28 +112,40 @@ class ChunkFetcher(object):
             self.group.access_chunk(chunk)
 
         if self.overlap_flag:
-            assert self.fetching_chunk is None
+            assert self.predict_next_chunk is None
             self.prefetch(chunks)
+
+    def reduce_call_back(self):
+        self.reduced_chunk.update_extra_reduce_info(self.reduced_block)
+        if self.reduced_block is not None:
+            self.group.rcache.free_public_block(self.reduced_block)
 
     def reduce_chunk(self, chunk: Chunk):
         if not chunk.reduce_check:
             return False
 
-        if self.overlap_flag:
-            context = torch.cuda.stream
-            self.reducing_flag = True
-        else:
-            context = nullcontext
-
         self.scheduler.remove(chunk)
-        with context(self.reduce_stream):
-            if self.overlap_flag:
-                self.wait_main()
+
+        if not self.overlap_flag:
+            # reduce the chunk if not overlapped
             self.group.reduce_chunk(chunk)
+        else:
+            # wait main stream for its computation
+            self.reduce_stream.wait_stream(self.main_stream)
+            # main stream should wait reduce stream
+            # if there is a block recycle
+            if self.reduced_chunk is not None:
+                self.main_stream.wait_stream(self.reduce_stream)
+                self.reduce_call_back()
+
+            with torch.cuda.stream(self.reduce_stream):
+                self.reduced_chunk = chunk
+                self.reduced_block = self.group.reduce_chunk(chunk, sync=False)
 
     def prefetch(self, chunks: list[Chunk]):
-        # TODO: this instruction
         next_chunk = self.scheduler.get_next_chunk(chunks)
+        self.predict_next_chunk = next_chunk
+
         # return if there is no next scattered chunk
         if next_chunk is None or self.group.is_accessed(next_chunk):
             return
@@ -150,10 +161,10 @@ class ChunkFetcher(object):
             evict_chunk = maybe_chunk
 
         with torch.cuda.stream(self.prefetch_stream):
-            if self.reducing_flag:
-                self.wait_reduce()
-            self.wait_main()
-            self.fetching_chunk = next_chunk
+            # wait main stream
+            self.prefetch_stream.wait_stream(self.main_stream)
+            self.is_fetching = True
+
             if evict_chunk is not None:
                 self.group.release_chunk(evict_chunk)
             self.group.access_chunk(next_chunk)

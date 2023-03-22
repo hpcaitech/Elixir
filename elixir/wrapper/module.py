@@ -203,13 +203,12 @@ class ElixirModule(nn.Module):
 
     def backward(self, loss: torch.Tensor):
         loss.backward()
-        # wait for gradient reduce
-        if self.prefetch_flag:
-            torch.cuda.synchronize()
-        # reset all attributes
-        self.module.zero_grad(set_to_none=True)
+
         self.fetcher.clear()
         HookParam.release_fetcher()
+
+        # reset all attributes
+        self.module.zero_grad(set_to_none=True)
 
     def state_dict(self, destination=None, prefix='', keep_vars=False, only_rank_0: bool = False):
         assert keep_vars is False, 'state_dict can not keep variables in ElixirModule'
