@@ -1,4 +1,4 @@
-from test.utils.iterator import TestIterator
+from functools import partial
 from test.utils.registry import TEST_MODELS
 
 import torch
@@ -14,20 +14,16 @@ MACRO_BS = 2
 MACRO_SL = 1024
 
 
-class MicroIterator(TestIterator):
-
-    def generate(self):
-        input_ids = torch.randint(low=0, high=MICRO_VS, size=(MICRO_BS, MICRO_SL))
-        attn_mask = torch.ones_like(input_ids)
-        return input_ids, attn_mask
+def micro_data_fn():
+    input_ids = torch.randint(low=0, high=MICRO_VS, size=(MICRO_BS, MICRO_SL))
+    attn_mask = torch.ones_like(input_ids)
+    return dict(input_ids=input_ids, attention_mask=attn_mask)
 
 
-class MacroIterator(TestIterator):
-
-    def generate(self):
-        input_ids = torch.randint(low=0, high=MACRO_VS, size=(MACRO_BS, MACRO_SL))
-        attn_mask = torch.ones_like(input_ids)
-        return input_ids, attn_mask
+def small_data_fn():
+    input_ids = torch.randint(low=0, high=MACRO_VS, size=(MACRO_BS, MACRO_SL))
+    attn_mask = torch.ones_like(input_ids)
+    return dict(input_ids=input_ids, attention_mask=attn_mask)
 
 
 class GPTLMLoss(nn.Module):
@@ -71,41 +67,10 @@ class GPTLMModel(nn.Module):
         return loss
 
 
-def gpt2_micro():
-    return GPTLMModel(hidden_size=32, num_layers=2, num_attention_heads=4, max_seq_len=64, vocab_size=128)
+gpt2_micro = partial(GPTLMModel, hidden_size=32, num_layers=2, num_attention_heads=4, max_seq_len=64, vocab_size=128)
+gpt2_small = GPTLMModel
+gpt2_base = partial(GPTLMModel, hidden_size=1024, num_layers=24, num_attention_heads=16)
 
-
-def gpt2_small():
-    return GPTLMModel()
-
-
-def gpt2_base():
-    return GPTLMModel(hidden_size=1024, num_layers=24, num_attention_heads=16)
-
-
-@TEST_MODELS.register('gpt_micro')
-def gpt_micro_funcs():
-
-    def model_builder():
-        return gpt2_micro()
-
-    train_iter = MicroIterator()
-    valid_iter = MicroIterator()
-
-    criterion = nn.CrossEntropyLoss()
-
-    return model_builder, train_iter, valid_iter, criterion
-
-
-@TEST_MODELS.register('gpt_small')
-def gpt_base_funcs():
-
-    def model_builder():
-        return gpt2_small()
-
-    train_iter = MacroIterator()
-    valid_iter = MacroIterator()
-
-    criterion = nn.CrossEntropyLoss()
-
-    return model_builder, train_iter, valid_iter, criterion
+TEST_MODELS.register('gpt2_micro', gpt2_micro, micro_data_fn)
+TEST_MODELS.register('gpt2_small', gpt2_small, small_data_fn)
+TEST_MODELS.register('gpt2_base', gpt2_base, small_data_fn)

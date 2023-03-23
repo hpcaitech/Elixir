@@ -1,8 +1,20 @@
 import torch
 from torch.testing import assert_close
+from torch.utils._pytree import tree_map
 
 from . import gpt, mlp, resnet, small
 from .registry import TEST_MODELS
+
+
+def to_cuda(input_dict):
+
+    def local_fn(t):
+        if isinstance(t, torch.Tensor):
+            t = t.cuda()
+        return t
+
+    ret = tree_map(local_fn, input_dict)
+    return ret
 
 
 def allclose(ta, tb, **kwargs):
