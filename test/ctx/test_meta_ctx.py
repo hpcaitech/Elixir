@@ -4,7 +4,7 @@ from elixir.ctx import MetaContext
 
 
 def test_meta_context():
-    builder, *_ = TEST_MODELS.get_func('resnet')()
+    builder, *_ = TEST_MODELS.get('resnet')
     with MetaContext():
         model = builder()
 

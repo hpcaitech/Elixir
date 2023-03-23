@@ -8,15 +8,13 @@ from elixir.utils import gpu_device
 
 
 def step_fn(model, inp):
-    model(**inp).sum().backward()
+    model(**inp).backward()
 
 
 def test_simple_search():
-    builder, data_iter, *_ = TEST_MODELS.get_func('small')()
-    model = builder()
-
-    data, label = next(data_iter)
-    example_input = dict(x=data)
+    model_fn, data_fn = TEST_MODELS.get('small')
+    model = model_fn()
+    data = data_fn()
 
     sr = simple_search(model,
                        1,
@@ -24,7 +22,7 @@ def test_simple_search():
                        shard_device=gpu_device(),
                        prefetch=True,
                        verbose=True,
-                       inp=example_input,
+                       inp=data,
                        step_fn=step_fn)
 
     chunk_plans = deepcopy(sr.param_chunk_plans)
