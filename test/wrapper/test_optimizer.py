@@ -1,7 +1,7 @@
 import copy
 import os
 from functools import partial
-from test.utils import TEST_MODELS, allclose, assert_dict_values
+from test.utils import TEST_MODELS, allclose, assert_dict_values, to_cuda
 
 import pytest
 import torch
@@ -15,8 +15,8 @@ from elixir.utils import gpu_device, init_distributed, seed_all
 from elixir.wrapper import ElixirModule, ElixirOptimizer
 
 
-def exam_optimizer_one_model(builder, train_iter, nproc, group, exam_seed=2261):
-    ddp_model = builder().cuda()
+def exam_optimizer_one_model(model_fn, data_fn, nproc, group, exam_seed=2261):
+    ddp_model = model_fn().cuda()
     test_model = copy.deepcopy(ddp_model)
 
     ddp_model = DDP(ddp_model)
@@ -29,17 +29,16 @@ def exam_optimizer_one_model(builder, train_iter, nproc, group, exam_seed=2261):
 
     # get different data
     seed_all(exam_seed + dist.get_rank(group))
-    data, label = next(train_iter)
-    data = data.cuda()
+    data = to_cuda(data_fn())
 
     seed_all(exam_seed, cuda_deterministic=True)
     ddp_optim.zero_grad()
-    ddp_loss = ddp_model(data).sum()
+    ddp_loss = ddp_model(**data)
     ddp_loss.backward()
     ddp_optim.step()
 
     test_optim.zero_grad()
-    test_loss = test_model(data).sum()
+    test_loss = test_model(**data)
     test_optim.backward(test_loss)
     test_optim.step()
 
@@ -50,8 +49,8 @@ def exam_optimizer_one_model(builder, train_iter, nproc, group, exam_seed=2261):
 
 
 def exam_optimizer_in_models(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    exam_optimizer_one_model(builder, train_iter, nproc, group)
+    model_fn, data_fn = TEST_MODELS.get('resnet')
+    exam_optimizer_one_model(model_fn, data_fn, nproc, group)
 
 
 def run_dist(rank, world_size):

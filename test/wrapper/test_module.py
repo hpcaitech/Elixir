@@ -1,7 +1,7 @@
 import copy
 import os
 from functools import partial
-from test.utils import TEST_MODELS, assert_dict_values
+from test.utils import TEST_MODELS, assert_dict_values, to_cuda
 
 import pytest
 import torch
@@ -38,8 +38,8 @@ def check_gradient(ddp_model: nn.Module, test_model: ElixirModule):
 
 
 def exam_module_init(nproc, group, grad_flag):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    torch_model = builder().cuda()
+    model_fn, data_fn = TEST_MODELS.get('resnet')
+    torch_model = model_fn().cuda()
     for param in torch_model.parameters():
         param.requires_grad = grad_flag
     test_model = copy.deepcopy(torch_model)
@@ -52,23 +52,23 @@ def exam_module_init(nproc, group, grad_flag):
     assert_dict_values(torch_st, test_st, fn=torch.equal)
 
 
-def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2261):
-    ddp_model = builder().cuda()
+def exam_one_module_fwd_bwd(model_fn, data_fn, nproc, group, exam_seed=2261):
+    ddp_model = model_fn().cuda()
     test_model = copy.deepcopy(ddp_model)
     sr = simple_search(test_model, nproc, allocate_factor=0.6)
     test_model = ElixirModule(test_model, sr, group)
 
     # get different data
     seed_all(exam_seed + dist.get_rank(group))
-    data, label = next(train_iter)
-    data = data.cuda()
+    data = data_fn()
+    data = to_cuda(data)
 
     seed_all(exam_seed, cuda_deterministic=True)
     ddp_model = DDP(ddp_model)
-    ddp_loss = ddp_model(data).sum()
+    ddp_loss = ddp_model(**data)
     ddp_loss.backward()
 
-    test_loss = test_model(data).sum()
+    test_loss = test_model(**data)
     test_model.backward(test_loss)
 
     assert_close(ddp_loss, test_loss)
@@ -76,8 +76,8 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2261):
 
 
 def exam_modules_fwd_bwd(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    exam_one_module_fwd_bwd(builder, train_iter, nproc, group)
+    model_fn, data_fn = TEST_MODELS.get('resnet')
+    exam_one_module_fwd_bwd(model_fn, data_fn, nproc, group)
 
 
 def run_dist(rank, world_size):

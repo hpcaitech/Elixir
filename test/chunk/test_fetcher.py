@@ -2,7 +2,7 @@ import copy
 import os
 from functools import partial
 from test.chunk.fetcher_utils import hook_transform
-from test.utils import TEST_MODELS
+from test.utils import TEST_MODELS, to_cuda
 
 import pytest
 import torch
@@ -25,23 +25,22 @@ def check_gradient(ddp_model, my_model, cg: ChunkGroup):
 
 
 def exam_chunk_fetcher(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    torch_model = builder().cuda()
+    model_fn, data_fn = TEST_MODELS.get('resnet')
+    torch_model = model_fn().cuda()
     test_model = copy.deepcopy(torch_model)
 
     rank = dist.get_rank(group)
     # get different data
     seed_all(1001 + rank)
-    data, label = next(train_iter)
-    data = data.cuda()
+    data = to_cuda(data_fn())
 
     seed_all(1001, cuda_deterministic=True)
     ddp_model = DDP(torch_model)
-    ddp_loss = ddp_model(data).sum()
+    ddp_loss = ddp_model(**data)
     ddp_loss.backward()
 
     hook_model, cg = hook_transform(test_model, group)
-    my_loss = hook_model(data).sum()
+    my_loss = hook_model(**data)
     my_loss.backward()
 
     assert_close(ddp_loss, my_loss)

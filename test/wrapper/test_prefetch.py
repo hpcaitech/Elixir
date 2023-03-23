@@ -1,7 +1,7 @@
 import copy
 import os
 from functools import partial
-from test.utils import TEST_MODELS, assert_dict_values
+from test.utils import TEST_MODELS, to_cuda
 
 import pytest
 import torch
@@ -37,22 +37,19 @@ def check_gradient(ddp_model: nn.Module, test_model: ElixirModule):
     check_chunks(test_model.param_chunk_group, test_model.param_chunk_group.float_chunks)
 
 
-def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
+def exam_one_module_fwd_bwd(model_fn, data_fn, nproc, group, exam_seed=2263):
 
     def one_step(local_model, local_input):
-        loss = local_model(**local_input).sum()
+        loss = local_model(**local_input)
         loss.backward()
-        torch.cuda.synchronize()
         return loss
 
-    ddp_model = builder().cuda()
+    ddp_model = model_fn().cuda()
     test_model = copy.deepcopy(ddp_model)
 
     # get different data
     seed_all(exam_seed + dist.get_rank(group))
-    data, label = next(train_iter)
-    data = data.cuda()
-    example_input = dict(x=data)
+    data = to_cuda(data_fn())
 
     # wrap as DDP model
     ddp_model = DDP(ddp_model)
@@ -62,13 +59,13 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
                        shard_device=gpu_device(),
                        prefetch=True,
                        verbose=True,
-                       inp=example_input,
+                       inp=data,
                        step_fn=one_step)
     test_model = ElixirModule(test_model, sr, group, prefetch=True)
 
     seed_all(exam_seed, cuda_deterministic=True)
-    ddp_loss = one_step(ddp_model, example_input)
-    test_loss = test_model(**example_input).sum()
+    ddp_loss = one_step(ddp_model, data)
+    test_loss = test_model(**data)
     test_model.backward(test_loss)
 
     assert_close(ddp_loss, test_loss)
@@ -76,8 +73,8 @@ def exam_one_module_fwd_bwd(builder, train_iter, nproc, group, exam_seed=2263):
 
 
 def exam_modules_fwd_bwd(nproc, group):
-    builder, train_iter, test_iter, criterion = TEST_MODELS.get_func('resnet')()
-    exam_one_module_fwd_bwd(builder, train_iter, nproc, group)
+    model_fn, data_fn = TEST_MODELS.get('resnet')
+    exam_one_module_fwd_bwd(model_fn, data_fn, nproc, group)
 
 
 def run_dist(rank, world_size):
