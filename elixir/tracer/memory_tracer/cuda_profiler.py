@@ -1,11 +1,12 @@
 import gc
-from typing import Callable, Tuple, Union
+from typing import Callable, Dict, Tuple, Union
 
 import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
 from elixir.tracer.utils import get_cuda_allocated, meta_copy, model_memory_figure
+from elixir.utils import print_rank_0
 
 from .memory_tensor import MTensor
 
@@ -17,9 +18,9 @@ def grad_cleaner(grad):
     return empty_grad
 
 
-def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], step_fn: Callable, dtype=torch.float):
-
-    print(f'You are profiling cuda memory with dtype `{dtype}`')
+def cuda_memory_profiling(model: nn.Module, inp: Dict, step_fn: Callable, dtype=torch.float):
+    assert isinstance(inp, dict), 'the example input should be a dictionary'
+    print_rank_0(f'You are profiling cuda memory with dtype `{dtype}`')
 
     def tensor_trans(t: torch.Tensor):
         # set dtype for tensors
@@ -50,15 +51,14 @@ def cuda_memory_profiling(model: nn.Module, inp: Union[torch.Tensor, Tuple], ste
     # add hooks to clean gradients
     for param in model.parameters():
         param.register_hook(grad_cleaner)
-    # convert all input data to meta_tensor
-    if not isinstance(inp, tuple):
-        inp = (inp,)
 
-    def input_trans(t: torch.Tensor):
-        cuda_dtype = dtype if t.is_floating_point() else t.dtype
-        cuda_t = t.data.to(dtype=cuda_dtype, device='cuda')
-        cuda_t.requires_grad = t.requires_grad
-        return MTensor(cuda_t)
+    def input_trans(t):
+        if isinstance(t, torch.Tensor):
+            cuda_dtype = dtype if t.is_floating_point() else t.dtype
+            cuda_t = t.data.to(dtype=cuda_dtype, device='cuda')
+            cuda_t.requires_grad = t.requires_grad
+            return MTensor(cuda_t)
+        return t
 
     inp = tree_map(input_trans, inp)
     # reset all collected peak memory states

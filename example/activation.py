@@ -1,4 +1,5 @@
-from test.utils.gpt import GPTLMModel, MacroIterator
+from test.utils import to_cuda
+from test.utils.gpt import GPTLMModel, small_data_fn
 
 import torch
 from transformers import AutoConfig, OPTConfig, OPTForCausalLM
@@ -34,17 +35,14 @@ def profile_gpt():
     model_size = get_model_size(model)
     print(f'model size: {model_size_formatter(model_size)}')
 
-    train_iter = MacroIterator()
-    input_ids, attn_mask = next(train_iter)
-    input_ids, attn_mask = input_ids.cuda(), attn_mask.cuda()
-    inp = (input_ids, attn_mask)
+    data = small_data_fn()
 
     def train_step(model_in, inp_in):
-        loss = model_in(*inp_in)
+        loss = model_in(**inp_in)
         loss.backward()
 
     model.gradient_checkpointing_enable()
-    profiling_dict = cuda_memory_profiling(model, inp, train_step, dtype=torch.float16)
+    profiling_dict = cuda_memory_profiling(model, data, train_step, dtype=torch.float16)
     print('memory usage', profiling_dict)
 
 
@@ -64,21 +62,17 @@ def profile_opt():
     model_size = get_model_size(model)
     print(f'model size: {model_size_formatter(model_size)}')
 
-    train_iter = MacroIterator()
-    input_ids, attn_mask = next(train_iter)
-    input_ids, attn_mask = input_ids.cuda(), attn_mask.cuda()
-    inp = (input_ids, attn_mask)
+    data = small_data_fn()
 
     def train_step(model_in, inp_in):
-        input_ids, attn_mask = inp_in
-        outputs = model_in(input_ids=input_ids, attention_mask=attn_mask, labels=input_ids)
-        loss = outputs['loss']
+        outputs = model_in(**inp_in)
+        loss = outputs['logits'].sum()
         loss.backward()
 
     model.gradient_checkpointing_enable()
-    profiling_dict = cuda_memory_profiling(model, inp, train_step, dtype=torch.float16)
+    profiling_dict = cuda_memory_profiling(model, data, train_step, dtype=torch.float16)
     print('memory usage', profiling_dict)
 
 
 if __name__ == '__main__':
-    profile_gpt()
+    profile_opt()
