@@ -1,15 +1,19 @@
+from test.utils import to_cuda
+
 import pytest
+import torch
 
 
 def test_registry():
     from test.utils.registry import TEST_MODELS
-    for name, construct_func in TEST_MODELS:
+    for name, model_tuple in TEST_MODELS:
+        torch.cuda.synchronize()
         print(f'model `{name}` is in testing')
-        builder, train_iter, valid_iter, criterion = construct_func()
-        model = builder()
-        data, label = next(train_iter)
-        out = model(data)
-        loss = criterion(out, label)
+
+        model_fn, data_fn = model_tuple
+        model = model_fn().cuda()
+        data = to_cuda(data_fn())
+        loss = model(**data)
         loss.backward()
 
 

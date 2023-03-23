@@ -1,14 +1,11 @@
-from test.utils.iterator import TestIterator
 from test.utils.registry import TEST_MODELS
 
 import torch
 import torch.nn as nn
 
 
-class MlpIterator(TestIterator):
-
-    def generate(self):
-        return torch.randn(4, 16), torch.randint(low=0, high=10, size=(4,))
+def mlp_data_fn():
+    return dict(x=torch.randn(4, 16))
 
 
 class MlpModule(nn.Module):
@@ -23,15 +20,15 @@ class MlpModule(nn.Module):
         return x + (self.proj2(self.act(self.proj1(x))))
 
 
-@TEST_MODELS.register("mlp")
-def mlp_funcs():
+class MlpModel(nn.Module):
 
-    def model_builder():
-        return MlpModule()
+    def __init__(self, hidden_dim: int = 16) -> None:
+        super().__init__()
+        self.mlp = MlpModule(hidden_dim)
 
-    train_iter = MlpIterator()
-    valid_iter = MlpIterator()
+    def forward(self, x):
+        output = self.mlp(x)
+        return output.sum()
 
-    criterion = nn.CrossEntropyLoss()
 
-    return model_builder, train_iter, valid_iter, criterion
+TEST_MODELS.register('mlp', MlpModel, mlp_data_fn)

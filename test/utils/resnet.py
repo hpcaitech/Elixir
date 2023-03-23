@@ -6,23 +6,19 @@ import torch.nn as nn
 from torchvision.models import resnet18
 
 
-class ResNetIterator(TestIterator):
-
-    def generate(self):
-        data = torch.randn(4, 3, 32, 32)
-        label = torch.randint(low=0, high=10, size=(4,))
-        return data, label
+def resnet_data_fn():
+    return dict(x=torch.randn(4, 3, 32, 32))
 
 
-@TEST_MODELS.register('resnet')
-def resnet_funcs():
+class ResNetModel(nn.Module):
 
-    def model_builder():
-        return resnet18()
+    def __init__(self) -> None:
+        super().__init__()
+        self.r = resnet18()
 
-    train_iter = ResNetIterator()
-    valid_iter = ResNetIterator()
+    def forward(self, x):
+        output = self.r(x)
+        return output.sum()
 
-    criterion = nn.CrossEntropyLoss()
 
-    return model_builder, train_iter, valid_iter, criterion
+TEST_MODELS.register('resnet', ResNetModel, resnet_data_fn)

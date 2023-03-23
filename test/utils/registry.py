@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import Callable
 
 
 class Registry(object):
@@ -7,16 +8,13 @@ class Registry(object):
         super().__init__()
         self._registry_dict = OrderedDict()
 
-    def register(self, name: str):
+    def register(self, name: str, model_fn: Callable, data_fn: Callable):
         assert name not in self._registry_dict
 
-        def register_func(call_func):
-            self._registry_dict[name] = call_func
-            return call_func
+        model_tuple = (model_fn, data_fn)
+        self._registry_dict[name] = model_tuple
 
-        return register_func
-
-    def get_func(self, name: str):
+    def get(self, name: str):
         return self._registry_dict[name]
 
     def __iter__(self):

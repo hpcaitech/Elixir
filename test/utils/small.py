@@ -1,4 +1,3 @@
-from test.utils.iterator import TestIterator
 from test.utils.mlp import MlpModule
 from test.utils.registry import TEST_MODELS
 
@@ -6,15 +5,11 @@ import torch
 import torch.nn as nn
 
 
-class SmallIterator(TestIterator):
-
-    def generate(self):
-        data = torch.randint(low=0, high=20, size=(4, 8))
-        label = torch.randint(low=0, high=2, size=(4,))
-        return data, label
+def small_data_fn():
+    return dict(x=torch.randint(low=0, high=20, size=(4, 8)))
 
 
-class SmallModule(nn.Module):
+class SmallModel(nn.Module):
 
     def __init__(self, num_embeddings: int = 20, hidden_dim: int = 16) -> None:
         super().__init__()
@@ -30,18 +25,7 @@ class SmallModule(nn.Module):
         x = x + self.norm1(self.mlp(x))
         x = self.proj(self.norm2(x))
         x = x.mean(dim=-2)
-        return x
+        return x.sum()
 
 
-@TEST_MODELS.register('small')
-def small_funcs():
-
-    def model_builder():
-        return SmallModule()
-
-    train_iter = SmallIterator()
-    valid_iter = SmallIterator()
-
-    criterion = nn.CrossEntropyLoss()
-
-    return model_builder, train_iter, valid_iter, criterion
+TEST_MODELS.register('small', SmallModel, small_data_fn)
