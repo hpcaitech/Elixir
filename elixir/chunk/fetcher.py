@@ -8,9 +8,15 @@ from .scheduler import ChunkScheduler
 
 class ChunkFetcher(object):
 
-    def __init__(self, scheduler: ChunkScheduler, group: ChunkGroup, overlap: bool = False) -> None:
+    def __init__(self,
+                 scheduler: ChunkScheduler,
+                 group: ChunkGroup,
+                 overlap: bool = False,
+                 reduce_always_fp32: bool = False) -> None:
+
         self.scheduler: ChunkScheduler = scheduler
         self.group: ChunkGroup = group
+        self.reduce_always_fp32 = reduce_always_fp32
         self.current_step = -1
 
         self.overlap_flag = overlap
@@ -128,7 +134,7 @@ class ChunkFetcher(object):
 
         if not self.overlap_flag:
             # reduce the chunk if not overlapped
-            self.group.reduce_chunk(chunk)
+            self.group.reduce_chunk(chunk, always_fp32=self.reduce_always_fp32, sync=True)
         else:
             # wait main stream for its computation
             self.reduce_stream.wait_stream(self.main_stream)
@@ -140,7 +146,7 @@ class ChunkFetcher(object):
 
             with torch.cuda.stream(self.reduce_stream):
                 self.reduced_chunk = chunk
-                self.reduced_block = self.group.reduce_chunk(chunk, sync=False)
+                self.reduced_block = self.group.reduce_chunk(chunk, always_fp32=self.reduce_always_fp32, sync=False)
 
     def prefetch(self, chunks: list[Chunk]):
         next_chunk = self.scheduler.get_next_chunk(chunks)

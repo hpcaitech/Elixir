@@ -143,12 +143,12 @@ class ChunkGroup(object):
         self.__remove_from_accset(chunk)
         return True
 
-    def reduce_chunk(self, chunk: Chunk, sync: bool = True) -> Optional[TensorBlock]:
+    def reduce_chunk(self, chunk: Chunk, always_fp32: bool = False, sync: bool = True) -> Optional[TensorBlock]:
         self.inside_check(chunk)
         assert self.is_accessed(chunk)
         assert chunk.reduce_check
 
-        block = chunk.reduce_chunk(sync)
+        block = chunk.reduce_chunk(always_fp32=always_fp32, sync=sync)
         if block and sync:
             # if synchronized, free the block into rcache
             self.rcache.free_public_block(block)

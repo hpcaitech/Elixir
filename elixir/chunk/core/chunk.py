@@ -277,16 +277,31 @@ class Chunk:
             self.optim_sync_flag = True
         self.is_replica = False
 
-    def reduce(self):
+    def reduce(self, always_fp32: bool = False):
         assert self.is_replica
 
         self.__remove_tensors_ptr()
-        buffer = self.rcb.payload[self.shard_begin:self.shard_end]
+
         if self.pg_size > 1:
-            self.rcb.payload /= self.pg_size
-            input_list = list(torch.chunk(self.rcb.payload, chunks=self.pg_size, dim=0))
-            dist.reduce_scatter(buffer, input_list, group=self.torch_pg)
-        self.__update_shard(self.rcb.payload, self.shard)
+            if always_fp32:
+                # cast the payload to fp32
+                reduce_buffer = self.rcb.payload.to(dtype=torch.float)
+            else:
+                # otherwise, use the same payload
+                reduce_buffer = self.rcb.payload
+            # divide the reduce buffer by the size of the process group
+            reduce_buffer /= self.pg_size
+            # try to use inplace reduce scatter
+            # notice: pytorch does not allow true inplace reduce scatter
+            # because pytorch will allocate a continuous memory space for collective communications
+            shard_buffer = reduce_buffer[self.shard_begin:self.shard_end]
+            input_list = list(torch.chunk(reduce_buffer, chunks=self.pg_size, dim=0))
+            dist.reduce_scatter(shard_buffer, input_list, group=self.torch_pg)
+        else:
+            # if process group size equals to 1, do not communicate
+            reduce_buffer = self.rcb.payload
+
+        self.__update_shard(reduce_buffer, self.shard)
 
         self.is_replica = False
 
@@ -331,14 +346,14 @@ class Chunk:
         if self.l2_norm_flag:
             self.set_l2_norm(valid_tensor)
 
-    def reduce_chunk(self, sync: bool = True) -> Optional[TensorBlock]:
+    def reduce_chunk(self, always_fp32: bool = False, sync: bool = True) -> Optional[TensorBlock]:
         """Reduce scatter all the gradients. It's an operation done in CUDA.
         """
         # sanity check
         assert not self.is_init
         assert self.is_replica
 
-        self.reduce()
+        self.reduce(always_fp32=always_fp32)
         self.__update_tensors_state(TensorState.HOLD)
 
         # reset the rcb pointer

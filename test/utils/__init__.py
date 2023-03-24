@@ -38,4 +38,4 @@ def assert_dict_values(da, db, fn):
         if u.device != v.device:
             v = v.to(u.device)
         # print(f"checking key {k}: {u.shape} vs {v.shape}")
-        assert fn(u.data, v.data)
+        assert fn(u.data, v.data), f'max diff {torch.max(torch.abs(u.data - v.data))}'
