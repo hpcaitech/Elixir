@@ -44,16 +44,18 @@ class GPTLMModel(nn.Module):
     def __init__(self, hidden_size=768, num_layers=12, num_attention_heads=12, max_seq_len=1024, vocab_size=50257):
         super().__init__()
         self.enable_gc = False
-        self.module = GPT2LMHeadModel(
-            GPT2Config(n_embd=hidden_size,
-                       n_layer=num_layers,
-                       n_head=num_attention_heads,
-                       n_positions=max_seq_len,
-                       n_ctx=max_seq_len,
-                       vocab_size=vocab_size,
-                       resid_pdrop=0.0,
-                       embd_pdrop=0.0,
-                       attn_pdrop=0.0))
+        self.config = GPT2Config(
+        # pre-commit: do not rearrange
+            n_embd=hidden_size,
+            n_layer=num_layers,
+            n_head=num_attention_heads,
+            n_positions=max_seq_len,
+            n_ctx=max_seq_len,
+            vocab_size=vocab_size,
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0)
+        self.module = GPT2LMHeadModel(config=self.config)
         self.criterion = GPTLMLoss()
 
     def gradient_checkpointing_enable(self):
