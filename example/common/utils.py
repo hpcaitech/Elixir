@@ -17,7 +17,7 @@ class DummyProfiler:
 # Randomly Generated Data
 def fake_gpt_data(batch_size, seq_len, vocab_size):
     input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
-    attention_mask = torch.zeros_like(input_ids)
+    attention_mask = torch.ones_like(input_ids)
     return input_ids, attention_mask
 
 
