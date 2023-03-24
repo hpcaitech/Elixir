@@ -40,7 +40,9 @@ class ElixirModule(nn.Module):
                  search_result: SearchResult,
                  process_group: ProcessGroup,
                  prefetch: bool = False,
-                 dtype: torch.dtype = torch.float) -> None:
+                 dtype: torch.dtype = torch.float,
+                 reduce_always_fp32: bool = False,
+                 output_fp32: bool = False) -> None:
         super().__init__()
 
         assert dtype in {torch.float, torch.float16}
@@ -51,6 +53,8 @@ class ElixirModule(nn.Module):
         self.use_amp = (dtype == torch.float16)
         self.process_group = process_group
         self.prefetch_flag = prefetch
+        self.reduce_always_fp32 = reduce_always_fp32
+        self.output_fp32 = output_fp32
 
         self.no_grad_state_dict = dict()
         self.grad_state_dict = dict()
@@ -145,7 +149,10 @@ class ElixirModule(nn.Module):
         else:
             scheduler = FIFOScheduler()
 
-        self.fetcher = ChunkFetcher(scheduler, self.param_chunk_group, overlap=prefetch)
+        self.fetcher = ChunkFetcher(scheduler,
+                                    self.param_chunk_group,
+                                    overlap=prefetch,
+                                    reduce_always_fp32=self.reduce_always_fp32)
 
     def __init_buffer_storage(self):
         buffer_size = 0
@@ -191,7 +198,9 @@ class ElixirModule(nn.Module):
         HookParam.attach_fetcher(self.fetcher, self.buffer)
 
         def to_outplace_tensor(t):
-            if torch.is_tensor(t):
+            if isinstance(t, torch.Tensor):
+                if t.is_floating_point():
+                    t = t.to(self.dtype)
                 t = OutplaceTensor(t)
             return t
 
@@ -199,6 +208,9 @@ class ElixirModule(nn.Module):
         kwargs = tree_map(to_outplace_tensor, kwargs)
 
         outputs = self.module(*args, **kwargs)
+        if self.output_fp32:
+            outputs = outputs.float()
+
         return outputs
 
     def backward(self, loss: torch.Tensor):
