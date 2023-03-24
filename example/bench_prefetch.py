@@ -3,28 +3,15 @@ from test.utils.gpt import GPTLMModel
 from time import time
 
 import colossalai
-import psutil
 import torch
 import torch.distributed as dist
 from colossalai.logging import disable_existing_loggers, get_dist_logger
 from colossalai.nn.optimizer import HybridAdam
-from common.utils import fake_gpt_data, get_profile_context, get_tflops, get_time_stamp
 
 from elixir.search import simple_search
-from elixir.utils import get_model_size, gpu_device, model_size_formatter, print_rank_0
+from elixir.utils import get_model_size, gpu_device, model_size_formatter
 from elixir.wrapper import ElixirModule, ElixirOptimizer
-
-
-def get_cpu_mem():
-    return psutil.Process().memory_info().rss / 1024**2
-
-
-def get_gpu_mem():
-    return torch.cuda.memory_allocated() / 1024**2
-
-
-def get_mem_info(prefix=''):
-    return f'{prefix}GPU memory usage: {get_gpu_mem():.2f} MB, CPU memory usage: {get_cpu_mem():.2f} MB'
+from example.common.utils import fake_gpt_data, get_mem_info, get_profile_context, get_tflops, get_time_stamp
 
 
 def resnet_tflops(model_numel, batch_size, step_time):
@@ -110,7 +97,7 @@ def benchmark_gpt(enable_prefetch: bool = True):
         if n >= warmup_steps:
             tflops_list.append(step_tflops)
 
-    is_profile = True
+    is_profile = False
     demo_profiler = get_profile_context(is_profile,
                                         warmup_steps,
                                         number_steps - warmup_steps,
