@@ -7,6 +7,7 @@ import colossalai.nn.optimizer as colo_optim
 import torch
 import torch.distributed as dist
 from colossalai.amp.naive_amp.grad_scaler import BaseGradScaler, ConstantGradScaler, DynamicGradScaler
+from colossalai.logging import get_dist_logger
 from torch.nn import Parameter
 
 from elixir.chunk import Chunk
@@ -36,7 +37,7 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
     def __init__(self,
                  module: ElixirModule,
                  optimizer: torch.optim.Optimizer,
-                 initial_scale: float = 65536,
+                 initial_scale: float = 32768,
                  min_scale: float = 1,
                  growth_factor: float = 2,
                  backoff_factor: float = 0.5,
@@ -81,6 +82,7 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
         else:
             self.grad_scaler = ConstantGradScaler(1.0, verbose=False)
         self._comm_buffer: torch.Tensor = torch.zeros(1, dtype=torch.float, device=gpu_device())
+        self._logger = get_dist_logger()
 
     def _set_grad_ptr(self):
         for group in self.param_groups:
@@ -110,8 +112,9 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
             overflow_counter += int(param_chunk.overflow)
         return overflow_counter > 0
 
-    def _clear_global_norm(self) -> None:
+    def _clear_optim_states(self) -> None:
         for param_chunk in self.param_chunk_set:
+            param_chunk.overflow = False
             param_chunk.l2_norm = None
 
     def _calc_global_norm(self) -> float:
@@ -121,7 +124,6 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
             assert not param_chunk.is_replica
 
             group_to_norm[param_chunk.torch_pg] += param_chunk.l2_norm
-            param_chunk.l2_norm = None    # clear l2 norm
 
         norm_sqr = 0.0
         for group, part_norm in group_to_norm.items():
@@ -165,8 +167,8 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
         if found_inf:
             self.optim_state = OptimState.UNSCALED    # no need to unscale grad
             self.grad_scaler.update(found_inf)    # update gradient scaler
-            # self._logger.info(f'Found overflow. Skip step')
-            self._clear_global_norm()    # clear recorded norm
+            self._logger.info(f'Found overflow. Skip step')
+            self._clear_optim_states()    # clear chunk states used for optimizer update
             self.zero_grad()    # reset all gradients
             self._update_fp16_params()
             return
@@ -175,6 +177,7 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
         # so that gradient = gradient / combined scale
         combined_scale = self._get_combined_scale()
         self.grad_scaler.update(found_inf)
+        self._clear_optim_states()
 
         ret = self.optim.step(div_scale=combined_scale, *args, **kwargs)
         self.zero_grad()
