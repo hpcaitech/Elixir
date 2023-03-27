@@ -25,7 +25,7 @@ def cuda_memory_profiling(model: nn.Module, inp: Dict, step_fn: Callable, dtype=
     def tensor_trans(t: torch.Tensor):
         # set dtype for tensors
         meta_dtype = dtype if t.is_floating_point() else t.dtype
-        meta_t = t.data.to(device='meta', dtype=meta_dtype)
+        meta_t = torch.empty_like(t.data, device='meta', dtype=meta_dtype)
         # pack parameters
         if isinstance(t, nn.Parameter):
             meta_t = nn.Parameter(meta_t)
@@ -55,7 +55,8 @@ def cuda_memory_profiling(model: nn.Module, inp: Dict, step_fn: Callable, dtype=
     def input_trans(t):
         if isinstance(t, torch.Tensor):
             cuda_dtype = dtype if t.is_floating_point() else t.dtype
-            cuda_t = t.data.to(dtype=cuda_dtype, device='cuda')
+            cuda_t = t.data.clone()
+            cuda_t = cuda_t.to(dtype=cuda_dtype, device='cuda')
             cuda_t.requires_grad = t.requires_grad
             return MTensor(cuda_t)
         return t
