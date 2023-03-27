@@ -12,7 +12,7 @@ def one_step(model, inp):
     return loss
 
 
-def test_one_model(model_fn, data_fn):
+def try_one_model(model_fn, data_fn):
     model = model_fn().cuda()
     data = to_cuda(data_fn())
     one_step(model, data)    # generate gradients
@@ -38,7 +38,7 @@ def test_cuda_profiler():
     model_list = ['resnet', 'gpt2_micro']
     for name in model_list:
         model_fn, data_fn = TEST_MODELS.get(name)
-        test_one_model(model_fn, data_fn)
+        try_one_model(model_fn, data_fn)
 
 
 if __name__ == '__main__':
