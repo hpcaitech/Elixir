@@ -11,7 +11,7 @@ from elixir.utils import gpu_device, print_rank_0
 from .base import SearchBase
 from .result import SearchResult
 from .simulator import find_optimal_chunk_size
-from .utils import get_multi_used_params, to_divide
+from .utils import find_search_range, get_multi_used_params, to_divide
 
 dtype_to_es = {torch.float16: 2, torch.float32: 4, torch.float64: 8}
 
@@ -60,7 +60,8 @@ class SearchOptimal(SearchBase):
     def public_trucate(self, length: int) -> int:
         return to_divide(length, self.default_group_size)
 
-    def search(self, min_chunk_size: int, max_chunk_size: int, search_interval: int) -> Tuple:
+    def search(self) -> Tuple:
+        min_chunk_size, max_chunk_size, search_interval = find_search_range(self.meta_module)
         # get multi-used parameters
         private_params = get_multi_used_params(self.meta_module)
         # subtract the footprint of fused parameters
@@ -164,20 +165,12 @@ def optimal_search(
     # pre-commit: do not rearrange
         m: nn.Module,
         group_size: int,
-        min_chunk_occ_mb: float = 32,
-        max_chunk_occ_mb: float = 96,
-        search_interval: int = 1024,
         unified_dtype: torch.dtype = torch.float,
         optimizer_type: str = 'Adam',
         overlap: bool = False,
         verbose: bool = False,
         inp=None,
         step_fn=None) -> SearchResult:
-
-    # transform unit first
-    element_size = dtype_to_es.get(unified_dtype)
-    min_chunk_size = math.ceil(min_chunk_occ_mb * 1024**2) // element_size
-    max_chunk_size = math.ceil(max_chunk_occ_mb * 1024**2) // element_size
 
     search_class = SearchOptimal(
     # pre-commit: do not rearrange
@@ -189,7 +182,7 @@ def optimal_search(
         inp=inp,
         step_fn=step_fn)
 
-    private_group, public_groups = search_class.search(min_chunk_size, max_chunk_size, search_interval)
+    private_group, public_groups = search_class.search()
     chunk_plans = search_class.generate_chunk_plans(private_group, public_groups)
 
     if unified_dtype == torch.float16:
