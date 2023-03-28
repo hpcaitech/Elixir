@@ -65,3 +65,34 @@ def find_minimum_waste_size(numel_group_list: list[list[int]], min_range: int, m
         test_size += interval
 
     return best_size, min_waste
+
+
+def find_search_range(m: nn.Module):
+
+    def next_2_pow(x: int):
+        y = 1
+        while y < x:
+            y <<= 1
+        return y
+
+    private_params = get_multi_used_params(m)
+    params = [p for p in m.parameters() if p not in private_params]
+    memo_list = [p.numel() * p.element_size() for p in params]
+    max_memo = max(memo_list)
+
+    default_min = 32 * 1024**2
+    while default_min < max_memo:
+        default_min <<= 1
+    default_max = default_min << 1
+
+    length = next_2_pow(len(params))
+    default_iter_times = 16 * 1024**2
+    default_search_times = default_iter_times // length
+
+    gap = default_max - default_min
+    if default_iter_times > (gap // 1024):
+        interval = 1024
+    else:
+        interval = gap // default_search_times
+
+    return (default_min, default_max, interval)
