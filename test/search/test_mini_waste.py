@@ -12,7 +12,7 @@ def step_fn(model, inp):
 
 
 def test_mini_waste_search():
-    model_fn, data_fn = TEST_MODELS.get('gpt2_base')
+    model_fn, data_fn = TEST_MODELS.get('gpt2_small')
     model = model_fn()
     data = data_fn()
 
