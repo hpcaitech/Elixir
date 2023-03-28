@@ -127,7 +127,9 @@ def find_optimal_chunk_size(
         move_times = calc_move_times(param_per_step, param_to_chunk, number_blocks)
 
         current_move_elements = move_times * test_size
+        # print("test", test_size, current_move_elements)
         if current_move_elements < min_move_elements:
+            min_move_elements = current_move_elements
             best_size = test_size
             best_number_blocks = number_blocks
             best_waste = current_waste

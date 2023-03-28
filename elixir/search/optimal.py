@@ -39,7 +39,7 @@ class SearchOptimal(SearchBase):
         # allowed capacity = allocation_fragment_factor * (total capacity - activation_fragment_factor * activation)
         self.cuda_capacity = int(allocation_fragment_factor *
                                  (gpu_memory - activation_fragment_factor * predict_activation))
-        self.cuda_elements = self.cuda_capacity // dtype_to_es(dtype)
+        self.cuda_elements = self.cuda_capacity // dtype_to_es.get(dtype)
 
         if self.cuda_capacity < 0:
             raise RuntimeError('optimal search: activation is too large, please reduce batch size')
@@ -79,6 +79,7 @@ class SearchOptimal(SearchBase):
                 if param in private_params or param in public_param_set:
                     continue
                 public_params.append(param)
+                public_param_set.add(param)
         del name_to_param
         del public_param_set
 
@@ -91,13 +92,14 @@ class SearchOptimal(SearchBase):
 
         if total_size <= min_chunk_size:
             public_block_size = total_size
-            n_blocks = 0
+            n_blocks = 1
             waste_size = 0
         else:
             public_block_size, n_blocks, waste_size = find_optimal_chunk_size(
             # pre-commit: do not rearrange
                 param_per_step=self.param_per_step,
                 param_names=public_param_names,
+                param_numels=public_numels,
                 cuda_elements=self.cuda_elements,
                 overlap=self.comm_overlap,
                 min_range=min_chunk_size,
@@ -206,7 +208,7 @@ def optimal_search(
     os_factor = 1 + (1 + extra_sotre_factor) * master_weight_factor
 
     for (i, plan) in enumerate(chunk_plans):
-        param_os_size = os_factor * plan.chunk_size
+        param_os_size = os_factor * plan.chunk_size // group_size
         if search_class.cuda_elements >= param_os_size:
             plan.kwargs['shard_device'] = gpu_device()
             search_class.cuda_elements -= param_os_size
