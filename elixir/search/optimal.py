@@ -1,12 +1,12 @@
-import math
 from typing import Tuple
 
 import torch
 import torch.nn as nn
 from torch.autograd.profiler_util import _format_memory
 
+from elixir.cuda import get_allowed_memory, gpu_device
 from elixir.tracer.memory_tracer import cuda_memory_profiling
-from elixir.utils import gpu_device, print_rank_0
+from elixir.utils import print_rank_0
 
 from .base import SearchBase
 from .result import SearchResult
@@ -35,7 +35,7 @@ class SearchOptimal(SearchBase):
         # get the maximum memory usage of activation
         predict_activation = memo_usage['activation_occ']
         # calculate the total capacity of the current device
-        gpu_memory = torch.cuda.get_device_properties(gpu_device()).total_memory
+        gpu_memory = get_allowed_memory()
         # allowed capacity = allocation_fragment_factor * (total capacity - activation_fragment_factor * activation)
         self.cuda_capacity = int(allocation_fragment_factor *
                                  (gpu_memory - activation_fragment_factor * predict_activation))

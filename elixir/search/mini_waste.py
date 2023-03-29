@@ -4,7 +4,8 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
-from elixir.utils import gpu_device, print_rank_0
+from elixir.cuda import gpu_device
+from elixir.utils import print_rank_0
 
 from .base import SearchBase
 from .result import SearchResult

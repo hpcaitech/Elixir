@@ -3,8 +3,8 @@ from test.utils import TEST_MODELS
 
 import torch
 
+from elixir.cuda import gpu_device
 from elixir.search import optimal_search
-from elixir.utils import gpu_device
 
 
 def step_fn(model, inp):

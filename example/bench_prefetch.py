@@ -8,8 +8,9 @@ import torch.distributed as dist
 from colossalai.logging import disable_existing_loggers, get_dist_logger
 from colossalai.nn.optimizer import HybridAdam
 
+from elixir.cuda import gpu_device
 from elixir.search import simple_search
-from elixir.utils import get_model_size, gpu_device, model_size_formatter
+from elixir.utils import get_model_size, model_size_formatter
 from elixir.wrapper import ElixirModule, ElixirOptimizer
 from example.common.utils import fake_gpt_data, get_mem_info, get_profile_context, get_tflops, get_time_stamp
 

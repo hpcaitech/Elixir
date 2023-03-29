@@ -3,6 +3,7 @@ from test.utils.gpt import GPTLMModel, small_data_fn
 import torch
 from transformers import AutoConfig, OPTConfig, OPTForCausalLM
 
+import elixir
 from elixir.ctx import MetaContext
 from elixir.search import optimal_search
 from elixir.search.utils import find_search_range
@@ -13,8 +14,10 @@ from example.common.utils import fake_gpt_data
 
 
 def profile_optimal_search():
+    elixir.cuda.set_memory_fraction(0.2)
+
     with MetaContext():
-        model = get_model('opt-7b')
+        model = get_model('opt-1b')
     model_size = get_model_size(model)
     print(f'model size: {model_size_formatter(model_size)}')
 
