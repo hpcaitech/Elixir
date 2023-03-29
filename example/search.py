@@ -14,7 +14,7 @@ from example.common.utils import fake_gpt_data
 
 
 def profile_optimal_search():
-    elixir.cuda.set_memory_fraction(0.25)
+    elixir.cuda.set_memory_fraction(0.2)
 
     with MetaContext():
         model = get_model('opt-1b')
