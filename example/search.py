@@ -14,12 +14,10 @@ from example.common.utils import fake_gpt_data
 
 
 def profile_optimal_search():
-    elixir.cuda.set_memory_fraction(0.5, device=1)
-    print(elixir.cuda.get_allowed_memory(device=0))
-    exit(0)
+    elixir.cuda.set_memory_fraction(0.25)
 
     with MetaContext():
-        model = get_model('opt-7b')
+        model = get_model('opt-1b')
     model_size = get_model_size(model)
     print(f'model size: {model_size_formatter(model_size)}')
 
