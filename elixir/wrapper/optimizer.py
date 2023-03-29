@@ -11,7 +11,7 @@ from colossalai.logging import get_dist_logger
 from torch.nn import Parameter
 
 from elixir.chunk import Chunk
-from elixir.utils import gpu_device
+from elixir.cuda import gpu_device
 
 from .module import ElixirModule
 

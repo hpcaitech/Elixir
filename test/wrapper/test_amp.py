@@ -11,8 +11,9 @@ from apex.parallel import DistributedDataParallel as DDP
 from colossalai.nn.optimizer import HybridAdam
 from torch.testing import assert_close
 
+from elixir.cuda import gpu_device
 from elixir.search import simple_search
-from elixir.utils import gpu_device, init_distributed, seed_all
+from elixir.utils import init_distributed, seed_all
 from elixir.wrapper import ElixirModule, ElixirOptimizer
 
 

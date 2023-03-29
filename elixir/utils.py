@@ -1,7 +1,6 @@
 import contextlib
 import os
 import random
-from functools import cache
 
 import numpy as np
 import torch
@@ -22,11 +21,6 @@ def normalize_tuple(x):
     if not isinstance(x, tuple):
         return (x,)
     return x
-
-
-@cache
-def gpu_device():
-    return torch.device(torch.cuda.current_device())
 
 
 def seed_all(seed, cuda_deterministic=False):

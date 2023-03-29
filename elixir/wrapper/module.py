@@ -10,10 +10,10 @@ from torch.utils._pytree import tree_map
 
 from elixir.chunk import Chunk, ChunkFetcher, ChunkGroup, MemoryPool, TensorState
 from elixir.chunk.scheduler import FIFOScheduler, PrefetchScheduler
+from elixir.cuda import gpu_device
 from elixir.hook import BufferStore, HookParam
 from elixir.parameter import OutplaceTensor
 from elixir.search import SearchResult
-from elixir.utils import gpu_device
 
 
 def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
