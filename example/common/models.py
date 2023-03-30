@@ -2,7 +2,7 @@ from test.utils.gpt import GPTLMModel
 
 from transformers import AutoConfig, OPTConfig
 
-from .opt import OPTLMModel
+from example.common.opt import OPTLMModel
 
 
 def gpt2_400m():

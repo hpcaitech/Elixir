@@ -5,8 +5,9 @@ from elixir.ctx import tensor_creation_methods
 
 class MetaContext(object):
 
-    def __init__(self) -> None:
+    def __init__(self, device_type: str = 'meta') -> None:
         super().__init__()
+        self.device_type = device_type
         return None
 
     def __enter__(self):
@@ -14,10 +15,7 @@ class MetaContext(object):
         def meta_wrap(func):
 
             def wrapped_func(*args, **kwargs):
-                if 'device' in kwargs:
-                    kwargs['device'] = 'meta'
-                else:
-                    kwargs.update({'device': 'meta'})
+                kwargs['device'] = self.device_type
                 return func(*args, **kwargs)
 
             return wrapped_func
