@@ -295,8 +295,7 @@ class Chunk:
             # notice: pytorch does not allow true inplace reduce scatter
             # because pytorch will allocate a continuous memory space for collective communications
             shard_buffer = reduce_buffer[self.shard_begin:self.shard_end]
-            input_list = list(torch.chunk(reduce_buffer, chunks=self.pg_size, dim=0))
-            dist.reduce_scatter(shard_buffer, input_list, group=self.torch_pg)
+            dist.reduce_scatter_tensor(shard_buffer, reduce_buffer, group=self.torch_pg)
         else:
             # if process group size equals to 1, do not communicate
             reduce_buffer = self.rcb.payload
@@ -439,9 +438,7 @@ class Chunk:
 
         buffer = replica[self.shard_begin:self.shard_end]
         buffer.copy_(shard)
-
-        gather_list = list(torch.chunk(input=replica, chunks=self.pg_size, dim=0))
-        dist.all_gather(gather_list, buffer, group=self.torch_pg)
+        dist.all_gather_into_tensor(replica, buffer, group=self.torch_pg)
 
     def __update_shard(self, replica: torch.Tensor, shard: torch.Tensor):
         assert self.is_replica
