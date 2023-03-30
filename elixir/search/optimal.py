@@ -6,7 +6,7 @@ from torch.autograd.profiler_util import _format_memory
 
 from elixir.cuda import get_allowed_memory, gpu_device
 from elixir.tracer.memory_tracer import cuda_memory_profiling
-from elixir.utils import print_rank_0
+from elixir.utils import calc_buffer_size, print_rank_0
 
 from .base import SearchBase
 from .result import SearchResult
@@ -32,16 +32,18 @@ class SearchOptimal(SearchBase):
         super().__init__(module, dtype, True, verbose, inp, step_fn)
         # profile cuda memory usage
         memo_usage = cuda_memory_profiling(model=self.meta_module, inp=inp, step_fn=step_fn, dtype=dtype)
+        buffer_occ = memo_usage['buffer_occ']
         # get the maximum memory usage of activation
         predict_activation = memo_usage['activation_occ']
         # calculate the total capacity of the current device
         gpu_memory = get_allowed_memory()
         # allowed capacity = allocation_fragment_factor * (total capacity - activation_fragment_factor * activation)
         self.cuda_capacity = int(allocation_fragment_factor *
-                                 (gpu_memory - activation_fragment_factor * predict_activation))
-        self.cuda_elements = self.cuda_capacity // dtype_to_es.get(dtype)
+                                 (gpu_memory - buffer_occ - activation_fragment_factor * predict_activation))
+        hook_buffer_store_size = calc_buffer_size(m=self.meta_module, test_dtype=self.unified_dtype)
+        self.cuda_elements = self.cuda_capacity // dtype_to_es.get(dtype) - hook_buffer_store_size
 
-        if self.cuda_capacity < 0:
+        if self.cuda_elements < 0:
             raise RuntimeError('optimal search: activation is too large, please reduce batch size')
 
         if self.verbose:
@@ -49,6 +51,7 @@ class SearchOptimal(SearchBase):
             for k, v in memo_usage.items():
                 print_rank_0(f'{k}: {_format_memory(v)}')
             print_rank_0(f'allowed allocation space: {_format_memory(self.cuda_capacity)}')
+            print_rank_0(f'hook buffer store size: {hook_buffer_store_size}')
             print_rank_0(f'allowed {dtype} elements: {self.cuda_elements}')
 
         self.default_group_size = default_group_size
