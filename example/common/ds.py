@@ -49,5 +49,5 @@ def train_init(batch_size: int, model_name: str, zero_stage: int, cpu_offload: b
 
 
 if __name__ == '__main__':
-    train_init(1, 'opt-1b', 3, True)
+    train_init(1, 'opt-1b', 3, False)
     exit(0)

@@ -1,11 +1,10 @@
+import argparse
 import os
 from functools import partial
 from time import time
 
-import colossalai
 import torch
 import torch.distributed as dist
-from colossalai.logging import disable_existing_loggers
 from torch.autograd.profiler_util import _format_memory
 
 import elixir
@@ -14,7 +13,7 @@ from example.common.utils import fake_gpt_data, get_mem_info, get_profile_contex
 
 
 def parse_args():
-    parser = colossalai.get_default_parser()
+    parser = argparse.ArgumentParser(description='Benchmark settings')
     parser.add_argument('--dp_type', type=str, default='fsdp', help='used ddp type in the benchmark')
     parser.add_argument(
         '--batch_size',
@@ -64,12 +63,11 @@ def main():
     PROF_FLAG = False    # The flag of profiling, False by default
 
     # distributed init
-    disable_existing_loggers()
-    colossalai.launch_from_torch(config={})
+    elixir.utils.init_distributed()
     world_size = dist.get_world_size()
     print_rank_0(f'Benchmark Infomation: m_name={args.model_name}, n_gpu={world_size}, bs={args.batch_size}')
 
-    cuda_memory_ratio = 0.2
+    cuda_memory_ratio = 0.3
     elixir.cuda.set_memory_fraction(cuda_memory_ratio)
     print_rank_0(f'Resitrict cuda memory to {_format_memory(elixir.cuda.get_allowed_memory())}')
 

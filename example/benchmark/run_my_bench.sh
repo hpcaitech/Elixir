@@ -1,7 +1,7 @@
 set -x
 
 export GPUNUM=${GPUNUM:-1}
-export BATCH_SIZE=${BATCH_SIZE:-16}
+export BATCH_SIZE=${BATCH_SIZE:-28}
 export MODEL_NAME=${MODEL_TYPE:-"opt-1b"}
 export TRAIN_STEP=${TRAIN_STEP:-6}
 # export PYTHONPATH=$PWD:$PYTHONPATH
