@@ -283,12 +283,15 @@ class Chunk:
         self.__remove_tensors_ptr()
 
         if self.pg_size > 1:
-            if always_fp32:
+            cast_to_fp32 = False
+            if always_fp32 and self.chunk_dtype != torch.float:
+                cast_to_fp32 = True
                 # cast the payload to fp32
                 reduce_buffer = self.rcb.payload.to(dtype=torch.float)
             else:
                 # otherwise, use the same payload
                 reduce_buffer = self.rcb.payload
+
             # divide the reduce buffer by the size of the process group
             reduce_buffer /= self.pg_size
             # try to use inplace reduce scatter
@@ -296,6 +299,11 @@ class Chunk:
             # because pytorch will allocate a continuous memory space for collective communications
             shard_buffer = reduce_buffer[self.shard_begin:self.shard_end]
             dist.reduce_scatter_tensor(shard_buffer, reduce_buffer, group=self.torch_pg)
+
+            # the result should be moved to payload for norm calculating
+            if cast_to_fp32:
+                calc_buffer = self.rcb.payload[self.shard_begin:self.shard_end]
+                calc_buffer.copy_(shard_buffer)
         else:
             # if process group size equals to 1, do not communicate
             reduce_buffer = self.rcb.payload
