@@ -1,12 +1,42 @@
-from typing import Callable, Dict
+from typing import Callable, Dict, List
 
 import torch
 import torch.nn as nn
+import torch.utils.checkpoint
 from torch.utils._pytree import tree_map
 
 from elixir.parameter import is_no_hook_op
 from elixir.tracer.utils import meta_copy
 from elixir.utils import no_dispatch, normalize_tuple
+
+torch_checkpoint_function = torch.utils.checkpoint.checkpoint
+
+
+def attach_checkpoint():
+    default_in_checkpoint = False
+
+    def inner_checkpoint_function(function, *args, use_reentrant: bool = True, **kwargs):
+        nonlocal default_in_checkpoint
+        prev_in_checkpoint = default_in_checkpoint
+        default_in_checkpoint = True
+        # record the step where going into checkpoint
+        if not prev_in_checkpoint:
+            Record.record_in_checkpoint()
+        # use original torch checkpoint function
+        global torch_checkpoint_function
+        ret = torch_checkpoint_function(function, *args, use_reentrant=use_reentrant, **kwargs)
+        # roll back
+        default_in_checkpoint = prev_in_checkpoint
+        if not default_in_checkpoint:
+            Record.record_out_checkpoint()
+        return ret
+
+    torch.utils.checkpoint.checkpoint = inner_checkpoint_function
+
+
+def release_checkpoint():
+    global torch_checkpoint_function
+    torch.utils.checkpoint.checkpoint = torch_checkpoint_function
 
 
 class PostFwdPreBwd(torch.autograd.Function):
@@ -23,7 +53,9 @@ class PostFwdPreBwd(torch.autograd.Function):
 
 
 class Record(nn.Parameter):
-    record_steps: Dict = None
+    record_steps: List = None
+    checkpoint_info: List = None
+    in_checkpoint_step: int = -1
 
     def __new__(cls, elem):
         assert elem.device.type == 'meta', f'device type: {elem.device.type}'
@@ -78,11 +110,26 @@ class Record(nn.Parameter):
     @staticmethod
     def reset():
         Record.record_steps = list()
+        Record.checkpoint_info = list()
+        Record.in_checkpoint_step = -1
+
+    @staticmethod
+    def record_in_checkpoint():
+        assert Record.in_checkpoint_step == -1
+        Record.in_checkpoint_step = len(Record.record_steps)
+
+    @staticmethod
+    def record_out_checkpoint():
+        assert Record.in_checkpoint_step != -1
+        value_pair = (Record.in_checkpoint_step, len(Record.record_steps))
+        Record.checkpoint_info.append(value_pair)
+        Record.in_checkpoint_step = -1
 
     @staticmethod
     def steps():
-        ret = Record.record_steps
+        ret = dict(params_per_step=Record.record_steps, checkpoint_info=Record.checkpoint_info)
         Record.record_steps = None
+        Record.checkpoint_info = None
         return ret
 
     @staticmethod
@@ -124,8 +171,8 @@ def generate_tf_order(model: nn.Module, inp: Dict, step_fn: Callable, dtype: tor
         return t
 
     inp = tree_map(input_trans, inp)
-
+    attach_checkpoint()
     step_fn(model, inp)
-
+    release_checkpoint()
     ret = Record.steps()
     return ret
