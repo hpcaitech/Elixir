@@ -1,3 +1,5 @@
+import math
+
 from .utils import to_divide
 
 
@@ -140,3 +142,26 @@ def find_optimal_chunk_size(
         raise RuntimeError('optimal search: can not find a valid solution')
 
     return best_size, best_number_blocks, best_waste
+
+
+def bandwidth_c2g(n: int):
+    return 16.3 * n + 8.7
+
+
+def bandwidth_g2c(n: int):
+    return 15.8 * n + 2.3
+
+
+def velocity_gpu(n: int):
+    return 50 * n
+
+
+def velocity_cpu(n: int):
+    return 1.66 * math.log(n) + 5.15
+
+
+def rcache_prioirity_check(n: int, r_os: int, e_p: int, e_o: int):
+    rcache_save = (r_os) / n * e_p * (1.0 / bandwidth_c2g(n) + 1.0 / bandwidth_g2c(n))
+    gpu_optim_save = e_o / bandwidth_c2g(n) + e_p / bandwidth_g2c(n) + 1.0 / velocity_cpu(n) - 1.0 / velocity_gpu(n)
+    print(rcache_save, gpu_optim_save)
+    return rcache_save > gpu_optim_save

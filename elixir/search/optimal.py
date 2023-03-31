@@ -1,3 +1,4 @@
+import math
 from typing import Tuple
 
 import torch
@@ -10,7 +11,7 @@ from elixir.utils import calc_buffer_size, print_rank_0
 
 from .base import SearchBase
 from .result import SearchResult
-from .simulator import find_optimal_chunk_size
+from .simulator import find_optimal_chunk_size, rcache_prioirity_check
 from .utils import find_search_range, get_multi_used_params, to_divide
 
 dtype_to_es = {torch.float16: 2, torch.float32: 4, torch.float64: 8}
@@ -111,9 +112,7 @@ class SearchOptimal(SearchBase):
                 interval=search_interval)
         # truncate the size of public blocks
         public_block_size = self.public_trucate(public_block_size)
-        # subtract the space of blocks
-        self.cuda_elements -= n_blocks * public_block_size
-        if self.cuda_elements < 0:
+        if self.cuda_elements < n_blocks * public_block_size:
             raise RuntimeError('no enough space for unfused parameters')
 
         if self.verbose:
@@ -163,6 +162,62 @@ class SearchOptimal(SearchBase):
 
         return (private_params, public_groups)
 
+    def configure_rcache_size(self, chunk_plans: list, os_factor: int):
+        element_os = 4
+        if self.unified_dtype == torch.float16:
+            element_pa = 2
+        elif self.unified_dtype == torch.float:
+            element_pa = 4
+        else:
+            raise NotImplementedError
+
+        priority = rcache_prioirity_check(n=self.default_group_size, r_os=os_factor, e_p=element_pa, e_o=element_os)
+        if self.verbose:
+            print_rank_0(f'rCache Priority Check: {priority}')
+
+        if not priority:
+            n_cache_blocks = max(4, math.ceil(self.max_checkpoint_size / self.public_block_size))
+            if self.comm_overlap:
+                n_cache_blocks += 2
+            n_cache_blocks = min(n_cache_blocks, self.public_block_number)
+            self.cuda_elements -= n_cache_blocks * self.public_block_size
+            if self.verbose:
+                print_rank_0(f'n_cache_block is set to {n_cache_blocks}')
+        else:
+            self.cuda_elements -= self.public_block_number * self.public_block_size
+
+        def try_move_chunk_to_cuda(fused: bool):
+            for (i, plan) in enumerate(chunk_plans):
+                rcache_fused = plan.kwargs.get('rcache_fused', False)
+                if not fused and rcache_fused:
+                    continue
+                elif fused and not rcache_fused:
+                    break
+                param_os_size = os_factor * plan.chunk_size // self.default_group_size
+                if self.cuda_elements >= param_os_size:
+                    plan.kwargs['shard_device'] = gpu_device()
+                    self.cuda_elements -= param_os_size
+                else:
+                    plan.kwargs['shard_device'] = torch.device('cpu')
+                    plan.kwargs['cpu_pin_memory'] = True
+                if self.verbose:
+                    print_rank_0(f"chunk {i}: shard device -> {plan.kwargs['shard_device']}")
+
+        # check chunks that are not fused on rCache
+        try_move_chunk_to_cuda(False)
+        # check chunks that are fused on rCache
+        try_move_chunk_to_cuda(True)
+
+        if not priority:
+            extra_blocks = math.floor(self.cuda_elements / self.public_block_size)
+            extra_blocks = min(extra_blocks, self.public_block_number - n_cache_blocks)
+            self.cuda_elements -= extra_blocks * self.public_block_size
+            self.public_block_number = n_cache_blocks + extra_blocks
+            if self.verbose:
+                print_rank_0(f'n_extra_blocks is set to {extra_blocks}')
+
+        return chunk_plans
+
 
 def optimal_search(
     # pre-commit: do not rearrange
@@ -202,18 +257,7 @@ def optimal_search(
     else:
         raise NotImplementedError
     os_factor = 1 + (1 + extra_sotre_factor) * master_weight_factor
-
-    for (i, plan) in enumerate(chunk_plans):
-        param_os_size = os_factor * plan.chunk_size // group_size
-        if search_class.cuda_elements >= param_os_size:
-            plan.kwargs['shard_device'] = gpu_device()
-            search_class.cuda_elements -= param_os_size
-        else:
-            plan.kwargs['shard_device'] = torch.device('cpu')
-            plan.kwargs['cpu_pin_memory'] = True
-
-        print_rank_0(f"chunk {i}: shard device -> {plan.kwargs['shard_device']}")
-
+    chunk_plans = search_class.configure_rcache_size(chunk_plans, os_factor)
     chunk_group = search_class.allocate_chunk_group(chunk_plans)
 
     return SearchResult(chunk_group=chunk_group,
