@@ -29,7 +29,7 @@ def profile_optimal_search():
         loss.backward()
 
     model.gradient_checkpointing_enable()
-    sr = optimal_search(model, 1, unified_dtype=torch.float16, overlap=True, verbose=True, inp=data, step_fn=train_step)
+    sr = optimal_search(model, 4, unified_dtype=torch.float16, overlap=True, verbose=True, inp=data, step_fn=train_step)
 
 
 if __name__ == '__main__':
