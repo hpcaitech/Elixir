@@ -163,5 +163,4 @@ def velocity_cpu(n: int):
 def rcache_prioirity_check(n: int, r_os: int, e_p: int, e_o: int):
     rcache_save = (r_os) / n * e_p * (1.0 / bandwidth_c2g(n) + 1.0 / bandwidth_g2c(n))
     gpu_optim_save = e_o / bandwidth_c2g(n) + e_p / bandwidth_g2c(n) + 1.0 / velocity_cpu(n) - 1.0 / velocity_gpu(n)
-    print(rcache_save, gpu_optim_save)
     return rcache_save > gpu_optim_save
