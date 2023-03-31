@@ -13,11 +13,18 @@ def test_tf_forward_backward():
 
     # model.gradient_checkpointing_enable()
     tf_order = generate_tf_order(model, data, forward_backward_fn)
-    assert len(tf_order) == 32
+    params_per_step = tf_order['params_per_step']
+    assert len(params_per_step) == 32
 
     model.gradient_checkpointing_enable()
     tf_order = generate_tf_order(model, data, forward_backward_fn)
-    assert len(tf_order) == 44
+    params_per_step = tf_order['params_per_step']
+    checkpoint_info = tf_order['checkpoint_info']
+    for i, step in enumerate(params_per_step):
+        print(f'step {i}: {step}')
+    for c in checkpoint_info:
+        print(f'checkpoint info: {c}')
+    assert len(params_per_step) == 44
 
     assert data['input_ids'].device.type == 'cpu'
     assert data['attention_mask'].device.type == 'cpu'

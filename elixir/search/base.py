@@ -44,13 +44,26 @@ class SearchBase(ABC):
         self.public_block_number = 0
 
         self.param_per_step = None
+        self.max_checkpoint_size = 0
         if self.prefetch_flag:
             assert inp is not None and step_fn is not None
-            self.param_per_step = generate_tf_order(self.meta_module, inp, step_fn, dtype)
+            tf_running_info = generate_tf_order(self.meta_module, inp, step_fn, dtype)
+            self.param_per_step = tf_running_info.get('params_per_step')
             if self.verbose:
                 print_rank_0('Prefetch enabled: the called order of parameters')
                 for i, step in enumerate(self.param_per_step):
                     print_rank_0(f'step {i}: {step}')
+
+            name_to_param = {name: param for name, param in self.meta_module.named_parameters()}
+            for checkpoint in tf_running_info.get('checkpoint_info'):
+                sum_numel = 0
+                for i in range(*checkpoint):
+                    for name in self.param_per_step[i]:
+                        param = name_to_param[name]
+                        sum_numel += param.numel()
+                self.max_checkpoint_size = max(self.max_checkpoint_size, sum_numel)
+                if self.verbose:
+                    print_rank_0(f'checkpoint infomation: from-to -> {checkpoint}, numel -> {sum_numel}')
 
     @abstractmethod
     def private_truncate(self, param: nn.Parameter) -> int:
