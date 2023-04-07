@@ -3,16 +3,19 @@ import os
 
 import deepspeed
 import torch
-from deepspeed.ops.adam import DeepSpeedCPUAdam
+from deepspeed.ops.adam import DeepSpeedCPUAdam, FusedAdam
+from transformers.modeling_utils import no_init_weights
 
+from elixir.utils import get_model_size
 from example.common.models import get_model
 
 
 def train_init(batch_size: int, model_name: str, zero_stage: int, cpu_offload: bool):
+    cur_path = os.path.abspath(os.path.dirname(__file__))
     if zero_stage == 2:
-        ds_path = './zero2_config.json'
+        ds_path = os.path.join(cur_path, 'zero2_config.json')
     else:
-        ds_path = './zero3_config.json'
+        ds_path = os.path.join(cur_path, 'zero3_config.json')
     ds_config = json.load(open(ds_path))
 
     if not cpu_offload:
@@ -26,15 +29,21 @@ def train_init(batch_size: int, model_name: str, zero_stage: int, cpu_offload: b
     ds_config['train_micro_batch_size_per_gpu'] = batch_size
 
     deepspeed.init_distributed()
-    with deepspeed.zero.Init(config_dict_or_path=ds_config):
-        model = get_model(model_name)
-    numel = deepspeed.runtime.zero.partition_parameters.param_count
+    if zero_stage == 2:
+        with no_init_weights():
+            model = get_model(model_name)
+        numel = get_model_size(model)
+    else:
+        with deepspeed.zero.Init(config_dict_or_path=ds_config):
+            model = get_model(model_name)
+        numel = deepspeed.runtime.zero.partition_parameters.param_count
 
     if cpu_offload:
         optimizer = DeepSpeedCPUAdam(model.parameters(), lr=1e-3)
     else:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
+        optimizer = FusedAdam(model.parameters(), lr=1e-3)
     model, optimizer, _, _ = deepspeed.initialize(model=model, optimizer=optimizer, config=ds_config)
+    model.gradient_checkpointing_enable()
 
     def forward(data):
         return model(**data)

@@ -1,6 +1,7 @@
 import torch
 import torch.distributed as dist
 from colossalai.nn.optimizer import HybridAdam
+from transformers.modeling_utils import no_init_weights
 
 from elixir.ctx import MetaContext
 from elixir.search import optimal_search
@@ -19,7 +20,8 @@ def train_init(model_name: str, data: dict):
     global_group = dist.GroupMember.WORLD
     global_size = dist.get_world_size()
 
-    model = get_model(model_name)
+    with no_init_weights():
+        model = get_model(model_name)
     model_size = get_model_size(model)
     optimizer = HybridAdam(model.parameters(), lr=1e-3)
 
@@ -52,4 +54,4 @@ def train_init(model_name: str, data: dict):
 if __name__ == '__main__':
     import colossalai
     colossalai.launch_from_torch(config={})
-    print(train_init('opt-1b'))
+    print(train_init('opt-13b'))
