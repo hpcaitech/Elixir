@@ -22,7 +22,7 @@ class SearchOptimal(SearchBase):
     def __init__(self,
                  module: nn.Module,
                  default_group_size: int,
-                 activation_fragment_factor: float = 1.3,
+                 activation_fragment_factor: float = 1.2,
                  allocation_fragment_factor: float = 0.95,
                  dtype: torch.dtype = torch.float,
                  verbose: bool = False,
