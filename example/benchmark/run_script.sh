@@ -1,6 +1,6 @@
 set -x
 
-T_DP=${T_DP:-"elixir"}
+T_DP=${T_DP:-"fsdp"}
 T_MODEL=${T_MODEL:-"opt-1b"}
 
 N_GPU=${N_GPU:-1}

@@ -34,7 +34,7 @@ def train_init(model_name: str, data: dict):
                         inp=data,
                         step_fn=train_step)
     model = ElixirModule(model, sr, global_group, prefetch=True, dtype=torch.float16)
-    optimizer = ElixirOptimizer(model, optimizer, initial_scale=32)
+    optimizer = ElixirOptimizer(model, optimizer, initial_scale=128)
 
     model.train()
 

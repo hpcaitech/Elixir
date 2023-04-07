@@ -1,7 +1,6 @@
 import torch
 import torch.distributed as dist
-from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp.fully_sharded_data_parallel import MixedPrecision, ShardingStrategy
+from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
 
 from elixir.ctx import MetaContext
 from elixir.utils import get_model_size
@@ -9,23 +8,13 @@ from example.common.models import get_model
 
 
 def train_init(model_name: str):
-    global_group = dist.GroupMember.WORLD
-    global_rank = dist.get_rank()
-
     with MetaContext('cuda'):
         model = get_model(model_name)
     model_size = get_model_size(model)
-
-    model = FSDP(module=model,
-                 process_group=global_group,
-                 device_id=global_rank,
-                 sharding_strategy=ShardingStrategy.FULL_SHARD,
-                 mixed_precision=MixedPrecision(param_dtype=torch.float16,
-                                                reduce_dtype=torch.float16,
-                                                buffer_dtype=torch.float16))
+    model = FSDP(module=model, mixed_precision=True, flatten_parameters=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0)
-    # model.gradient_checkpointing_enable()
+    model.gradient_checkpointing_enable()
     model.train()
 
     def forward(data):
