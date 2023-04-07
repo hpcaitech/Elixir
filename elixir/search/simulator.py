@@ -32,6 +32,7 @@ class LinkedSet(object):
 
 
 def calc_move_times(param_per_step: list, param_to_chunk: dict, n_blocks: int):
+    from elixir.c_utils import move_count
     chunk_per_step = list()
 
     for param_set in param_per_step:
@@ -42,37 +43,9 @@ def calc_move_times(param_per_step: list, param_to_chunk: dict, n_blocks: int):
                 continue
             id_set.add(param_to_chunk[name])
         if len(id_set) > 0:
-            chunk_per_step.append(id_set)
+            chunk_per_step.append(list(id_set))
 
-    offload_time = 0
-    upload_time = 0
-    chunks_in_rcache = LinkedSet()
-    for chunk_set in reversed(chunk_per_step):
-
-        # return inf if there is no enough chunks
-        if len(chunk_set) > n_blocks:
-            return float('inf')
-
-        for chunk_id in chunk_set:
-            if chunk_id in chunks_in_rcache:
-                # pop this chunk out
-                chunks_in_rcache.pop_value(chunk_id)
-                # append this chunk to the tail, since it is used the most recently
-                chunks_in_rcache.push(chunk_id)
-            else:
-                if chunks_in_rcache.full(n_blocks):
-                    # pop the least recently used chunk
-                    chunks_in_rcache.pop_left()
-                    # this evicted chunks should be uploaded before
-                    upload_time += 1
-                # append this chunk to the tail, since it is used the most recently
-                chunks_in_rcache.push(chunk_id)
-                # this chunk will be offloaded
-                offload_time += 1
-
-    upload_time += len(chunks_in_rcache)
-    assert upload_time == offload_time
-    return (offload_time << 1)
+    return move_count(chunk_per_step, n_blocks)
 
 
 def find_optimal_chunk_size(
@@ -161,6 +134,7 @@ def velocity_cpu(n: int):
 
 
 def rcache_prioirity_check(n: int, r_os: int, e_p: int, e_o: int):
-    rcache_save = (r_os) / n * e_p * (1.0 / bandwidth_c2g(n) + 1.0 / bandwidth_g2c(n))
-    gpu_optim_save = e_o / bandwidth_c2g(n) + e_p / bandwidth_g2c(n) + 1.0 / velocity_cpu(n) - 1.0 / velocity_gpu(n)
-    return rcache_save > gpu_optim_save
+    In = e_p / bandwidth_c2g(n) + e_p / bandwidth_g2c(n)
+    Jn = (n / r_os) * (e_o / bandwidth_c2g(n) + In + e_p / bandwidth_g2c(n) + 1.0 / velocity_cpu(n) -
+                       1.0 / velocity_gpu(n))
+    return In > Jn
