@@ -176,7 +176,7 @@ class SearchOptimal(SearchBase):
             print_rank_0(f'rCache Priority Check: {priority}')
 
         if not priority:
-            n_cache_blocks = max(4, math.ceil(self.max_checkpoint_size / self.public_block_size))
+            n_cache_blocks = max(4, math.ceil(self.max_checkpoint_size / self.public_block_size) + 1)
             if self.comm_overlap:
                 n_cache_blocks += 2
             n_cache_blocks = min(n_cache_blocks, self.public_block_number)
@@ -256,6 +256,7 @@ def optimal_search(
         extra_sotre_factor = 2
     else:
         raise NotImplementedError
+
     os_factor = 1 + (1 + extra_sotre_factor) * master_weight_factor
     chunk_plans = search_class.configure_rcache_size(chunk_plans, os_factor)
     chunk_group = search_class.allocate_chunk_group(chunk_plans)
