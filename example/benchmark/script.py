@@ -159,6 +159,7 @@ def main():
     dist.all_reduce(tflops_tensor)
     print_rank_0(f'Median TFLOPS is {tflops_tensor.item():.3f}')
     torch.cuda.synchronize()
+    dist.destroy_process_group()
 
 
 if __name__ == '__main__':
