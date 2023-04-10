@@ -1,5 +1,4 @@
 import argparse
-import os
 from functools import partial
 from time import time
 
@@ -15,6 +14,16 @@ from example.common.utils import fake_gpt_data, get_mem_info, get_profile_contex
 def parse_args():
     parser = argparse.ArgumentParser(description='Benchmark settings')
     parser.add_argument('--dp_type', type=str, default='fsdp', help='used ddp type in the benchmark')
+    parser.add_argument('--memory_ratio',
+                        type=float,
+                        default=1.0,
+                        help='the ratio of memory used for training, default is 1.0, which means using all the memory')
+    parser.add_argument(
+        '--model_name',
+        type=str,
+        default='gpt2-400m',
+        help='the name of the model to be benchmarked',
+    )
     parser.add_argument(
         '--batch_size',
         type=int,
@@ -22,32 +31,16 @@ def parse_args():
         help='batch size per DP group of training.',
     )
     parser.add_argument(
-        '--model_name',
-        type=str,
-        default='gpt2-400m',
-        help='model model scale',
-    )
-    parser.add_argument(
         '--train_step',
         type=int,
         default=10,
         help='training iterations for test',
     )
-
     args = parser.parse_args()
     return args
 
 
-def set_cpu_maximum_parallelism():
-    conf_str = torch.__config__.parallel_info()
-    inter_str = conf_str.split('hardware_concurrency() : ')[1]
-    max_concurrency = inter_str.split('\n')[0]
-    os.environ['OMP_NUM_THREADS'] = max_concurrency
-    print(f'environmental variable OMP_NUM_THREADS is set to {max_concurrency}.')
-
-
 def main():
-    set_cpu_maximum_parallelism()
     args = parse_args()
 
     # batch size per DP degree
@@ -65,10 +58,11 @@ def main():
     # distributed init
     elixir.utils.init_distributed()
     world_size = dist.get_world_size()
-    print_rank_0(f'Benchmark Infomation: m_name={args.model_name}, n_gpu={world_size}, bs={args.batch_size}')
+    print_rank_0(
+        f'Benchmark Infomation: m_name={args.model_name}, n_gpu={world_size}, bs={args.batch_size}, type_dp={args.dp_type}'
+    )
 
-    cuda_memory_ratio = 0.3
-    elixir.cuda.set_memory_fraction(cuda_memory_ratio)
+    elixir.cuda.set_memory_fraction(args.memory_ratio)
     print_rank_0(f'Resitrict cuda memory to {_format_memory(elixir.cuda.get_allowed_memory())}')
 
     torch.manual_seed(123)
@@ -83,6 +77,26 @@ def main():
     elif args.dp_type == 'elixir':
         from example.common.elx import train_init
         fwd, bwd, opt, model_size = train_init(model_name=args.model_name, data=data)
+    elif args.dp_type.startswith('zero'):
+        from example.common.ds import train_init
+
+        if args.dp_type.startswith('zero2'):
+            zero_stage = 2
+        elif args.dp_type.startswith('zero3'):
+            zero_stage = 3
+        else:
+            raise NotImplementedError
+
+        if args.dp_type.endswith('offload'):
+            cpu_offload = True
+        else:
+            cpu_offload = False
+
+        fwd, bwd, opt, model_size = train_init(batch_size=args.batch_size,
+                                               model_name=args.model_name,
+                                               zero_stage=zero_stage,
+                                               cpu_offload=cpu_offload)
+
     else:
         raise NotImplementedError
     print_rank_0(get_mem_info(prefix=f'After {args.dp_type} initialization: '))
@@ -145,6 +159,7 @@ def main():
     dist.all_reduce(tflops_tensor)
     print_rank_0(f'Median TFLOPS is {tflops_tensor.item():.3f}')
     torch.cuda.synchronize()
+    dist.destroy_process_group()
 
 
 if __name__ == '__main__':

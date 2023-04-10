@@ -39,6 +39,8 @@ class ChunkFetcher(object):
             torch.cuda.synchronize()
             if self.reduced_chunk is not None:
                 self.reduce_call_back()
+                self.reduced_chunk = None
+                self.reduced_block = None
 
         self.scheduler.clear()
 
