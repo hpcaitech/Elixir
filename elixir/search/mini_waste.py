@@ -9,7 +9,7 @@ from elixir.utils import print_rank_0
 
 from .base import SearchBase
 from .result import SearchResult
-from .utils import find_minimum_waste_size, get_multi_used_params, to_divide
+from .utils import find_minimum_waste_size, find_search_range, get_multi_used_params, to_divide
 
 dtype_to_es = {torch.float16: 2, torch.float32: 4, torch.float64: 8}
 
@@ -34,7 +34,8 @@ class SearchMiniWaste(SearchBase):
     def public_trucate(self, length: int) -> int:
         return to_divide(length, self.default_group_size)
 
-    def search(self, min_chunk_size: int, max_chunk_size: int, search_interval: int) -> Tuple:
+    def search(self) -> Tuple:
+        min_chunk_size, max_chunk_size, search_interval = find_search_range(self.meta_module)
         # get multi-used parameters
         private_params = get_multi_used_params(self.meta_module)
         # get parameters used only one time
@@ -116,20 +117,12 @@ class SearchMiniWaste(SearchBase):
 
 def minimum_waste_search(m: nn.Module,
                          group_size: int,
-                         min_chunk_occ_mb: float = 32,
-                         max_chunk_occ_mb: float = 96,
-                         search_interval: int = 1024,
                          unified_dtype: torch.dtype = torch.float,
                          cpu_offload: bool = False,
                          prefetch: bool = False,
                          verbose: bool = False,
                          inp=None,
                          step_fn=None) -> SearchResult:
-
-    # transform unit first
-    element_size = dtype_to_es.get(unified_dtype)
-    min_chunk_size = math.ceil(min_chunk_occ_mb * 1024**2) // element_size
-    max_chunk_size = math.ceil(max_chunk_occ_mb * 1024**2) // element_size
 
     search_class = SearchMiniWaste(
     # pre-commit: do not rearrange
@@ -141,7 +134,7 @@ def minimum_waste_search(m: nn.Module,
         inp=inp,
         step_fn=step_fn)
 
-    private_group, public_groups = search_class.search(min_chunk_size, max_chunk_size, search_interval)
+    private_group, public_groups = search_class.search()
     chunk_plans = search_class.generate_chunk_plans(private_group, public_groups)
 
     # assign shard device

@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.utils._pytree import tree_map
 
 from elixir.chunk import ChunkFetcher
+from elixir.kernels import fused_torch_functions
 from elixir.parameter import OutplaceTensor, is_no_hook_op, to_outplace_tensor
 
 from .functions import postfwd_prebwd_function, prefwd_postbwd_function
@@ -14,6 +15,7 @@ from .storage import BufferStore
 class HookParam(OutplaceTensor, nn.Parameter):
     pre_fwd_func = None
     post_fwd_func = None
+    use_fused_kernel = False
 
     @staticmethod
     def attach_fetcher(fetcher: ChunkFetcher, store: BufferStore):
@@ -24,6 +26,14 @@ class HookParam(OutplaceTensor, nn.Parameter):
     def release_fetcher():
         HookParam.pre_fwd_func = None
         HookParam.post_fwd_func = None
+
+    @staticmethod
+    def enable_fused_kernel():
+        HookParam.use_fused_kernel = True
+
+    @staticmethod
+    def disable_fused_kernel():
+        HookParam.use_fused_kernel = False
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
@@ -56,6 +66,8 @@ class HookParam(OutplaceTensor, nn.Parameter):
             return x
 
         with torch._C.DisableTorchFunction():
+            if HookParam.use_fused_kernel and func in fused_torch_functions:
+                func = fused_torch_functions.get(func)
             ret = func(*tree_map(replace_param, args), **tree_map(replace_param, kwargs))
         if not isinstance(ret, tuple):
             ret = (ret,)

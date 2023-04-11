@@ -16,25 +16,9 @@ from elixir.wrapper import ElixirModule
 
 
 def check_gradient(ddp_model: nn.Module, test_model: ElixirModule):
-    name_to_grad = {name: param.grad for name, param in ddp_model.named_parameters()}
-    param_to_name = {test_model.grad_state_dict[name]: name for name in name_to_grad}
-
-    def check_chunks(cg, chunks):
-        for c in chunks:
-            cg.access_chunk(c)
-            for t in c.get_tensors():
-                name = param_to_name[t]
-                grad = name_to_grad[name]
-
-                torch.cuda.synchronize()
-                print(f'checking the gradient of parameter `{name}`')
-                assert_close(t.data, grad.data)
-
-            if not c.rcache_fused:
-                cg.release_chunk(c)
-
-    check_chunks(test_model.param_chunk_group, test_model.param_chunk_group.fused_chunks)
-    check_chunks(test_model.param_chunk_group, test_model.param_chunk_group.float_chunks)
+    grad_state = test_model.state_dict(from_param=True)
+    for name, param in ddp_model.named_parameters():
+        assert_close(param.grad.cpu(), grad_state[name])
 
 
 def exam_module_init(nproc, group, grad_flag):

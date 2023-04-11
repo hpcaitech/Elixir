@@ -1,1 +1,1 @@
-pytest ctx tracer hook chunk search wrapper
+pytest ctx tracer hook kernels chunk search wrapper
