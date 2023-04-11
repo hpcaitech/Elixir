@@ -2,7 +2,7 @@ import torch
 from torch.testing import assert_close
 from torch.utils._pytree import tree_map
 
-from . import gpt, mlp, resnet, small
+from . import gpt, mlp, opt, resnet, small
 from .registry import TEST_MODELS
 
 
