@@ -37,5 +37,8 @@ class BufferStore(object):
 
         return
 
+    def empty_like(self, t: torch.Tensor):
+        return self.buffer[:t.numel()].view(t.shape)
+
     def __repr__(self) -> str:
         return f'Buffer(size={self.buffer_size}, dtype={self.buffer_dtype}, memo_occ={_format_memory(self.buffer_occ)})'
