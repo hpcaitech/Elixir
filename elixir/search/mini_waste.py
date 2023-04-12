@@ -50,7 +50,7 @@ class SearchMiniWaste(SearchBase):
             waste_size = 0
         else:
             public_block_size, waste_size = find_minimum_waste_size(
-            # pre-commit: do not rearrange
+                # pre-commit: do not rearrange
                 numel_group_list=[public_numels],
                 min_range=min_chunk_size,
                 max_range=max_chunk_size,
@@ -121,11 +121,12 @@ def minimum_waste_search(m: nn.Module,
                          cpu_offload: bool = False,
                          prefetch: bool = False,
                          verbose: bool = False,
+                         pin_memory: bool = True,
                          inp=None,
                          step_fn=None) -> SearchResult:
 
     search_class = SearchMiniWaste(
-    # pre-commit: do not rearrange
+        # pre-commit: do not rearrange
         module=m,
         default_group_size=group_size,
         dtype=unified_dtype,
@@ -146,7 +147,7 @@ def minimum_waste_search(m: nn.Module,
     for plan in chunk_plans:
         plan.kwargs['shard_device'] = shard_device
         if cpu_offload:
-            plan.kwargs['cpu_pin_memory'] = True
+            plan.kwargs['cpu_pin_memory'] = pin_memory
 
     chunk_group = search_class.allocate_chunk_group(chunk_plans)
 
