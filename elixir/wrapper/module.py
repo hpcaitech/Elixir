@@ -171,8 +171,7 @@ class ElixirModule(nn.Module):
 
     def _gradient_handler(self, grad: torch.Tensor, param: nn.Parameter):
         # create an empty tensor
-        empty_grad = torch.empty_like(grad)
-        empty_grad.storage().resize_(0)
+        fake_grad = self.buffer.empty_like(grad)
 
         with torch._C.DisableTorchFunction():
             chunk = self.fetcher.get_one_chunk(param)
@@ -183,7 +182,7 @@ class ElixirModule(nn.Module):
             chunk.copy_tensor_to_chunk_slice(param, grad)
             self.fetcher.reduce_chunk(chunk)
 
-        return empty_grad
+        return fake_grad
 
     def _lazy_init_check(self, m: nn.Module):
         # TODO(helson): deal with lazy init
