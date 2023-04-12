@@ -38,6 +38,7 @@ class XGPT2Model(GPT2Model):
         assert head_mask is None, 'head mask should be None'
 
         output_attn = kwargs.get('output_attentions', False)
-        assert output_attn is False or output_attn is None
+        if output_attn:
+            Warning('output_attentions is not supported for XGPT2Model')
 
         return super().forward(*args, **kwargs)

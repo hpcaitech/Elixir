@@ -29,7 +29,7 @@ class XOPTAttention(OPTAttention):
         assert is_cross_attention is False
         assert past_key_value is None
         assert layer_head_mask is None
-        assert output_attentions is False
+        # assert output_attentions is False
 
         bsz, tgt_len, _ = hidden_states.size()
 
@@ -83,6 +83,7 @@ class XOPTDecoder(OPTDecoder):
         assert head_mask is None, 'head mask should be None'
 
         output_attn = kwargs.get('output_attentions', False)
-        assert output_attn is False or output_attn is None
+        if output_attn:
+            Warning('output_attentions is not supported for XOPTDecoder')
 
         return super().forward(*args, **kwargs)

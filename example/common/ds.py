@@ -6,6 +6,7 @@ import torch
 from deepspeed.ops.adam import DeepSpeedCPUAdam, FusedAdam
 from transformers.modeling_utils import no_init_weights
 
+from elixir.kernels.attn_wrapper import wrap_attention
 from elixir.utils import get_model_size
 from example.common.models import get_model
 
@@ -44,6 +45,8 @@ def train_init(batch_size: int, model_name: str, zero_stage: int, cpu_offload: b
         optimizer = FusedAdam(model.parameters(), lr=1e-3)
     model, optimizer, _, _ = deepspeed.initialize(model=model, optimizer=optimizer, config=ds_config)
     model.gradient_checkpointing_enable()
+    model = wrap_attention(model)
+    model.train()
 
     def forward(data):
         return model(**data)

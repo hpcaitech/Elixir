@@ -4,6 +4,7 @@ from colossalai.nn.optimizer import HybridAdam
 from transformers.modeling_utils import no_init_weights
 
 from elixir.ctx import MetaContext
+from elixir.kernels.attn_wrapper import wrap_attention
 from elixir.search import optimal_search
 from elixir.utils import get_model_size
 from elixir.wrapper import ElixirModule, ElixirOptimizer
@@ -33,9 +34,10 @@ def train_init(model_name: str, data: dict):
                         verbose=True,
                         inp=data,
                         step_fn=train_step)
-    model = ElixirModule(model, sr, global_group, prefetch=True, dtype=torch.float16)
-    optimizer = ElixirOptimizer(model, optimizer, initial_scale=128)
+    model = ElixirModule(model, sr, global_group, prefetch=True, dtype=torch.float16, use_fused_kernels=True)
+    optimizer = ElixirOptimizer(model, optimizer, initial_scale=512)
 
+    model = wrap_attention(model)
     model.train()
 
     def forward(data):
