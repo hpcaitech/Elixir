@@ -3,8 +3,8 @@ import torch.nn as nn
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention, GPT2Model
 from transformers.models.opt.modeling_opt import OPTAttention, OPTDecoder
 
-from elixir.kernels.gpt_attention import XGPT2Attention, XGPT2Model
-from elixir.kernels.opt_attention import XOPTAttention, XOPTDecoder
+from .gpt_attention import XGPT2Attention, XGPT2Model
+from .opt_attention import XOPTAttention, XOPTDecoder
 
 
 def wrap_attention(model: nn.Module):

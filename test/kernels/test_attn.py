@@ -3,7 +3,7 @@ from test.utils import TEST_MODELS, to_cuda
 
 from torch.testing import assert_close
 
-from elixir.wrapper import wrap_attention
+from elixir.kernels.attn_wrapper import wrap_attention
 
 
 def exam_one_model(model_fn, data_fn):

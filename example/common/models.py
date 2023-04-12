@@ -6,35 +6,35 @@ from example.common.opt import OPTLMModel
 
 
 def gpt2_400m():
-    return GPTLMModel(hidden_size=1024, num_layers=24, num_attention_heads=32)
+    return GPTLMModel(hidden_size=1024, num_layers=24, num_attention_heads=16)
 
 
 def gpt2_1b():
-    return GPTLMModel(hidden_size=1536, num_layers=32, num_attention_heads=32)
+    return GPTLMModel(hidden_size=1536, num_layers=32, num_attention_heads=16)
 
 
 def gpt2_4b():
-    return GPTLMModel(hidden_size=3072, num_layers=32, num_attention_heads=32)
+    return GPTLMModel(hidden_size=3072, num_layers=32, num_attention_heads=16)
 
 
 def gpt2_10b():
-    return GPTLMModel(hidden_size=4096, num_layers=48, num_attention_heads=32)
+    return GPTLMModel(hidden_size=4096, num_layers=48, num_attention_heads=16)
 
 
 def gpt2_20b():
-    return GPTLMModel(hidden_size=8192, num_layers=24, num_attention_heads=32)
+    return GPTLMModel(hidden_size=8192, num_layers=24, num_attention_heads=16)
 
 
 def gpt2_25b():
-    return GPTLMModel(hidden_size=8192, num_layers=30, num_attention_heads=32)
+    return GPTLMModel(hidden_size=8192, num_layers=30, num_attention_heads=16)
 
 
 def gpt2_30b():
-    return GPTLMModel(hidden_size=8192, num_layers=36, num_attention_heads=32)
+    return GPTLMModel(hidden_size=8192, num_layers=36, num_attention_heads=16)
 
 
 def gpt2_40b():
-    return GPTLMModel(hidden_size=8192, num_layers=50, num_attention_heads=32)
+    return GPTLMModel(hidden_size=8192, num_layers=50, num_attention_heads=16)
 
 
 def opt_350m():
