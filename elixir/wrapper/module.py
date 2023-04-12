@@ -24,6 +24,11 @@ def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
     return param_data, optim_data
 
 
+def _lazy_init_check(tensor: torch.Tensor) -> None:
+    if isinstance(tensor, LazyTensor):
+        tensor.materialize()
+
+
 class ElixirModule(nn.Module):
     """Use this class to wrap your model when using Elixir. Don't know what should be written here.
     But some docstring is needed here.
@@ -84,13 +89,14 @@ class ElixirModule(nn.Module):
                 else:
                     self.no_grad_state_dict[name] = tensor
                     # polish no-grad parameters
-                    tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
+                    tensor.data = tensor.data.to(
+                        dtype=self.dtype, device=gpu_device())
             else:
                 # deal with buffers
-                if isinstance(tensor, LazyTensor):
-                    tensor.materialize()
+                _lazy_init_check(tensor)
                 to_dtype = self.dtype if tensor.is_floating_point() else tensor.dtype
-                tensor.data = tensor.data.to(dtype=to_dtype, device=gpu_device())
+                tensor.data = tensor.data.to(
+                    dtype=to_dtype, device=gpu_device())
 
         empty_mp = MemoryPool('cuda')
         empty_mp.allocate()
@@ -118,9 +124,9 @@ class ElixirModule(nn.Module):
 
             for name in plan.name_list:
                 param = self.grad_state_dict[name]
-                if isinstance(param, LazyTensor):
-                    param.materialize()
-                param_data, optim_data = get_param_optim_data(param.data, self.dtype)
+                _lazy_init_check(param)
+                param_data, optim_data = get_param_optim_data(
+                    param.data, self.dtype)
                 param.data = param_data
                 p_chunk.append_tensor(param)
                 o_chunk.append_tensor(optim_data)
@@ -151,7 +157,8 @@ class ElixirModule(nn.Module):
                     step_set.add(chunk)
                 chunk_called_per_step.append(step_set)
 
-            scheduler = PrefetchScheduler(chunk_called_per_step=chunk_called_per_step)
+            scheduler = PrefetchScheduler(
+                chunk_called_per_step=chunk_called_per_step)
         else:
             scheduler = FIFOScheduler()
 
@@ -183,7 +190,8 @@ class ElixirModule(nn.Module):
             assert self.fetcher.group.is_accessed(chunk)
             if chunk.tensors_info[param].state != TensorState.HOLD_AFTER_BWD:
                 raise RuntimeError()
-            self.fetcher.group.tensor_trans_state(param, TensorState.READY_FOR_REDUCE)
+            self.fetcher.group.tensor_trans_state(
+                param, TensorState.READY_FOR_REDUCE)
             chunk.copy_tensor_to_chunk_slice(param, grad)
             self.fetcher.reduce_chunk(chunk)
 
@@ -239,7 +247,8 @@ class ElixirModule(nn.Module):
                    from_param: bool = False):
         assert keep_vars is False, 'state_dict can not keep variables in ElixirModule'
         # make sure that the variables are kept, we shall detach them later
-        module_state_dict = self.module.state_dict(destination=destination, prefix=prefix, keep_vars=True)
+        module_state_dict = self.module.state_dict(
+            destination=destination, prefix=prefix, keep_vars=True)
 
         tensor_to_names = defaultdict(list)
         for name, tensor in module_state_dict.items():
