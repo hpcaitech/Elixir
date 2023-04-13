@@ -24,11 +24,6 @@ def get_param_optim_data(param_data: torch.Tensor, param_dtype: torch.dtype):
     return param_data, optim_data
 
 
-def _lazy_init_check(tensor: torch.Tensor) -> None:
-    if isinstance(tensor, LazyTensor):
-        tensor.materialize()
-
-
 class ElixirModule(nn.Module):
     """Use this class to wrap your model when using Elixir. Don't know what should be written here.
     But some docstring is needed here.
@@ -93,7 +88,7 @@ class ElixirModule(nn.Module):
                         dtype=self.dtype, device=gpu_device())
             else:
                 # deal with buffers
-                _lazy_init_check(tensor)
+                self._lazy_init_check(tensor)
                 to_dtype = self.dtype if tensor.is_floating_point() else tensor.dtype
                 tensor.data = tensor.data.to(
                     dtype=to_dtype, device=gpu_device())
@@ -124,7 +119,7 @@ class ElixirModule(nn.Module):
 
             for name in plan.name_list:
                 param = self.grad_state_dict[name]
-                _lazy_init_check(param)
+                self._lazy_init_check(param)
                 param_data, optim_data = get_param_optim_data(
                     param.data, self.dtype)
                 param.data = param_data
@@ -197,9 +192,9 @@ class ElixirModule(nn.Module):
 
         return empty_grad
 
-    def _lazy_init_check(self, m: nn.Module):
-        # TODO(helson): deal with lazy init
-        return False
+    def _lazy_init_check(self, tensor: torch.Tensor) -> None:
+        if isinstance(tensor, LazyTensor):
+            tensor.materialize()
 
     def _set_module_outplace(self, m: nn.Module):
         # set inplace to False for all modules
