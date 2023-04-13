@@ -121,6 +121,7 @@ def minimum_waste_search(m: nn.Module,
                          cpu_offload: bool = False,
                          prefetch: bool = False,
                          verbose: bool = False,
+                         pin_memory: bool = True,
                          inp=None,
                          step_fn=None) -> SearchResult:
 
@@ -146,7 +147,7 @@ def minimum_waste_search(m: nn.Module,
     for plan in chunk_plans:
         plan.kwargs['shard_device'] = shard_device
         if cpu_offload:
-            plan.kwargs['cpu_pin_memory'] = True
+            plan.kwargs['cpu_pin_memory'] = pin_memory
 
     chunk_group = search_class.allocate_chunk_group(chunk_plans)
 

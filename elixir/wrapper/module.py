@@ -5,6 +5,7 @@ from typing import Iterable
 
 import torch
 import torch.nn as nn
+from colossalai.utils.model.experimental import LazyTensor
 from torch.distributed import ProcessGroup
 from torch.utils._pytree import tree_map
 
@@ -86,6 +87,7 @@ class ElixirModule(nn.Module):
                     tensor.data = tensor.data.to(dtype=self.dtype, device=gpu_device())
             else:
                 # deal with buffers
+                self._lazy_init_check(tensor)
                 to_dtype = self.dtype if tensor.is_floating_point() else tensor.dtype
                 tensor.data = tensor.data.to(dtype=to_dtype, device=gpu_device())
 
@@ -115,7 +117,7 @@ class ElixirModule(nn.Module):
 
             for name in plan.name_list:
                 param = self.grad_state_dict[name]
-                # TODO(helson): deal with lazy init
+                self._lazy_init_check(param)
                 param_data, optim_data = get_param_optim_data(param.data, self.dtype)
                 param.data = param_data
                 p_chunk.append_tensor(param)
@@ -184,9 +186,9 @@ class ElixirModule(nn.Module):
 
         return fake_grad
 
-    def _lazy_init_check(self, m: nn.Module):
-        # TODO(helson): deal with lazy init
-        return False
+    def _lazy_init_check(self, tensor: torch.Tensor) -> None:
+        if isinstance(tensor, LazyTensor):
+            tensor.materialize()
 
     def _set_module_outplace(self, m: nn.Module):
         # set inplace to False for all modules
