@@ -50,7 +50,7 @@ class SearchMiniWaste(SearchBase):
             waste_size = 0
         else:
             public_block_size, waste_size = find_minimum_waste_size(
-                # pre-commit: do not rearrange
+            # pre-commit: do not rearrange
                 numel_group_list=[public_numels],
                 min_range=min_chunk_size,
                 max_range=max_chunk_size,
@@ -126,7 +126,7 @@ def minimum_waste_search(m: nn.Module,
                          step_fn=None) -> SearchResult:
 
     search_class = SearchMiniWaste(
-        # pre-commit: do not rearrange
+    # pre-commit: do not rearrange
         module=m,
         default_group_size=group_size,
         dtype=unified_dtype,
