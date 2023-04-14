@@ -439,6 +439,32 @@ class Chunk:
         dist.barrier()
         return cpu_copys
 
+    def load_tensors(self, tensor_list: List[Optional[torch.Tensor]], only_rank_0: bool = False) -> bool:
+        assert not self.is_replica
+        assert not self.is_init
+        temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_device())
+        # cheat the assertion in __update_replica
+        self.is_replica = True
+        self.__update_replica(temp_buffer, self.shard)
+        self.is_replica = False
+
+        if not only_rank_0 or self.pg_rank == 0:
+            for (_, c_info), load_tensor in zip(self.tensors_info.items(), tensor_list):
+                if load_tensor is None:
+                    continue
+                temp_buffer[c_info.offset:c_info.end].copy_(load_tensor.data.flatten())
+
+        # synchronize
+        dist.barrier()
+
+        if only_rank_0:
+            dist.broadcast(temp_buffer, src=0, group=self.torch_pg)
+
+        # cheat the assertion in __update_replica
+        self.is_replica = True
+        self.__update_shard(temp_buffer, self.shard)
+        self.is_replica = False
+
     def __update_replica(self, replica: torch.Tensor, shard: torch.Tensor):
         assert self.is_replica
         assert replica.numel() == self.chunk_size

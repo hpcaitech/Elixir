@@ -1,9 +1,10 @@
 from collections import defaultdict
 from copy import copy
 from functools import partial
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from colossalai.utils.model.experimental import LazyTensor
 from torch.distributed import ProcessGroup
@@ -263,3 +264,55 @@ class ElixirModule(nn.Module):
         update_state_dict(used_group.float_chunks)
 
         return module_state_dict
+
+    def load_state_dict(self, state_dict: Mapping[str, Any], only_rank_0: bool = False):
+        load_flag = not only_rank_0 or dist.get_rank() == 0
+        if not load_flag:
+            # only rank 0 loads the state dict
+            assert state_dict is None
+
+        if only_rank_0:
+            # broadcast the length of the state dict
+            state_length = len(state_dict) if load_flag else None
+            comm_list = [state_length]
+            dist.broadcast_object_list(comm_list)
+            state_length = comm_list[0]
+            # broadcast the keys of the state dict
+            state_keys = state_dict.keys() if load_flag else [None] * state_length
+            dist.broadcast_object_list(state_keys)
+            # update the state dict
+            if not load_flag:
+                state_dict = {k: None for k in state_keys}
+
+        # init the mapping from optim tensor to load tensor
+        optim_to_load = dict()
+        for name, maybe_tensor in state_dict.items():
+            if name in self.no_grad_state_dict:
+                no_grad_param = self.no_grad_state_dict.get(name)
+                if load_flag:
+                    no_grad_param.copy_(maybe_tensor)
+                if only_rank_0:
+                    dist.broadcast(no_grad_param, src=0)
+            elif name in self.grad_state_dict:
+                grad_param = self.grad_state_dict.get(name)
+                optim_tensor = self.param_to_optim.get(grad_param)
+                optim_to_load[optim_tensor] = maybe_tensor
+
+        def use_state_dict(chunks: Iterable[Chunk]):
+            for c in chunks:
+                load_tensor_list = list()
+                has_load = False
+                for chunk_tensor in c.tensors_info.keys():
+                    if chunk_tensor in optim_to_load:
+                        has_load = True
+                        load_tensor_list.append(optim_to_load[chunk_tensor])
+                    else:
+                        load_tensor_list.append(None)
+                if has_load:
+                    c.load_tensors(load_tensor_list, only_rank_0)
+                    c.paired_chunk.optim_update()
+
+        use_state_dict(self.optim_chunk_group.fused_chunks)
+        use_state_dict(self.optim_chunk_group.float_chunks)
+
+        return
