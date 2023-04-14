@@ -158,6 +158,7 @@ class ElixirModule(nn.Module):
                                     self.param_chunk_group,
                                     overlap=prefetch,
                                     reduce_always_fp32=self.reduce_always_fp32)
+        self.fetcher.reset()
 
     def __init_buffer_storage(self):
         buffer_size = 0
@@ -198,7 +199,6 @@ class ElixirModule(nn.Module):
                 module.inplace = False
 
     def forward(self, *args, **kwargs):
-        self.fetcher.reset()
         HookParam.attach_fetcher(self.fetcher, self.buffer)
         if self.use_fused_kernels:
             HookParam.enable_fused_kernel()
@@ -228,6 +228,8 @@ class ElixirModule(nn.Module):
 
         # reset all attributes
         self.module.zero_grad(set_to_none=True)
+        # reset the fetcher for the next step
+        self.fetcher.reset()
 
     def state_dict(self,
                    destination=None,
