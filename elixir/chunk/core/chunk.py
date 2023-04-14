@@ -460,7 +460,7 @@ class Chunk:
         if only_rank_0:
             dist.broadcast(temp_buffer, src=0, group=self.torch_pg)
 
-        # cheat the assertion in __update_replica
+        # cheat the assertion in __update_shard
         self.is_replica = True
         self.__update_shard(temp_buffer, self.shard)
         self.is_replica = False
