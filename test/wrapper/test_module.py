@@ -24,12 +24,18 @@ def check_gradient(ddp_model: nn.Module, test_model: ElixirModule):
 def exam_module_init(nproc, group, grad_flag):
     model_fn, data_fn = TEST_MODELS.get('resnet')
     torch_model = model_fn().cuda()
-    for param in torch_model.parameters():
-        param.requires_grad = grad_flag
-    test_model = copy.deepcopy(torch_model)
+    test_model = model_fn().cuda()
+
+    for p1, p2 in zip(torch_model.parameters(), test_model.parameters()):
+        p1.requires_grad = p2.requires_grad = grad_flag
 
     sr = simple_search(test_model, nproc)
     model = ElixirModule(test_model, sr, group)
+    # check function: ElixirModule.load_state_dict after ElixirModule.__init__
+    torch_st = torch_model.state_dict()
+    if dist.get_rank() != 0:
+        torch_st = None
+    test_st = model.load_state_dict(torch_st, only_rank_0=True)
     # check function: ElixirModule.state_dict after ElixirModule.__init__
     torch_st = torch_model.state_dict()
     test_st = model.state_dict()
@@ -84,4 +90,4 @@ def test_elixir_module(world_size):
 
 
 if __name__ == '__main__':
-    test_elixir_module(world_size=1)
+    test_elixir_module(world_size=2)

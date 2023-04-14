@@ -36,14 +36,14 @@ def cuda_memory_profiling(model: nn.Module, inp: Dict, step_fn: Callable, dtype=
     # get the memory firgure of the model
     memo_dict = model_memory_figure(model)
     # initialize a empty pool for parameters
-    pool = torch.empty(memo_dict['param_max_numel'], device='cuda', dtype=dtype)
+    pool = torch.zeros(memo_dict['param_max_numel'], device='cuda', dtype=dtype)
 
     def tensor_to_cuda(t):
         if isinstance(t, nn.Parameter):
             fake_data = pool[:t.numel()].view(t.shape)
             return nn.Parameter(fake_data)
         else:
-            fake_data = torch.empty(t.shape, device='cuda', dtype=t.dtype)
+            fake_data = torch.zeros(t.shape, device='cuda', dtype=t.dtype)
             return fake_data
 
     # make all parameters in CUDA and point to a same address
