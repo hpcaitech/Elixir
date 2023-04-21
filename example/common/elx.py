@@ -28,7 +28,7 @@ def train_init(model_name: str, data: dict):
 
     model.gradient_checkpointing_enable()
     model = wrap_attention(model)
-    
+
     sr = optimal_search(model,
                         global_size,
                         unified_dtype=torch.float16,

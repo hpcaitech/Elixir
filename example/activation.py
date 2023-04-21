@@ -1,6 +1,6 @@
 from test.utils.gpt import GPTLMModel, small_data_fn
-
 from time import time
+
 import torch
 from transformers import AutoConfig, OPTConfig, OPTForCausalLM
 
@@ -25,14 +25,14 @@ def profile_max_activation():
 
     model = wrap_attention(model)
     model.gradient_checkpointing_enable()
-    
+
     start = time()
-    
+
     profiling_dict = cuda_memory_profiling(model, data, train_step, dtype=torch.float16)
-    
+
     torch.cuda.synchronize()
     end = time()
-    
+
     print(f'profile time: {end - start: .2f} sec')
     print('memory usage', profiling_dict)
 

@@ -21,8 +21,8 @@ def check_gemini_plugin(early_stop: bool = True):
     for name, (model_fn, data_gen_fn, output_transform_fn, _) in model_zoo.items():
         # These models lead to CUDA error
         if name in ('diffusers_auto_encoder_kl', 'diffusers_vq_model', 'diffusers_unet2d_model', 'timm_resmlp',
-                    'timm_gmixer_12_224', 'timm_gmlp_b16_224', 'timm_mixer_b16_224', 'timm_convnext', 'torchaudio_wav2vec2_base', 'torchaudio_hubert_base',
-                    'torchvision_convnext_base'):
+                    'timm_gmixer_12_224', 'timm_gmlp_b16_224', 'timm_mixer_b16_224', 'timm_convnext',
+                    'torchaudio_wav2vec2_base', 'torchaudio_hubert_base', 'torchvision_convnext_base'):
             continue
 
         try:
@@ -41,7 +41,7 @@ def check_gemini_plugin(early_stop: bool = True):
             }
 
             sr = minimum_waste_search(
-                # pre-commit: do not rearrange
+            # pre-commit: do not rearrange
                 m=model,
                 group_size=global_size,
                 unified_dtype=torch.float16,
