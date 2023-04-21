@@ -3,8 +3,9 @@ from typing import Optional, Tuple
 import einops
 import torch
 import torch.nn as nn
-import xformers.ops as xops
 from transformers.models.opt.modeling_opt import OPTAttention, OPTDecoder
+
+from .attention import lower_triangular_attention
 
 
 class XOPTAttention(OPTAttention):
@@ -53,11 +54,7 @@ class XOPTAttention(OPTAttention):
         src_len = key_states.size(1)
         assert tgt_len == src_len
 
-        attn_output = xops.memory_efficient_attention(query=query_states,
-                                                      key=key_states,
-                                                      value=value_states,
-                                                      p=self.dropout,
-                                                      attn_bias=xops.LowerTriangularMask())
+        attn_output = lower_triangular_attention(query=query_states, key=key_states, value=value_states, p=self.dropout)
 
         if attn_output.size() != (bsz, tgt_len, self.num_heads, self.head_dim):
             raise ValueError(f'`attn_output` should be of size {(bsz, tgt_len, self.num_heads, self.head_dim)}, but is'
@@ -77,7 +74,7 @@ class XOPTDecoder(OPTDecoder):
     def forward(self, *args, **kwargs):
         assert 'attention_mask' in kwargs, 'please pass attention_mask as a kwarg'
         attn_mask = kwargs.get('attention_mask')
-        assert torch.all(attn_mask == 1), 'only accept no padding mask'
+        # assert torch.all(attn_mask == 1), 'only accept no padding mask'
 
         head_mask = kwargs.get('head_mask', None)
         assert head_mask is None, 'head mask should be None'

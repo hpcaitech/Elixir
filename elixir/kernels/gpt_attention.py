@@ -1,7 +1,8 @@
 import einops
 import torch
-import xformers.ops as xops
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention, GPT2Model
+
+from .attention import lower_triangular_attention
 
 
 class XGPT2Attention(GPT2Attention):
@@ -20,7 +21,7 @@ class XGPT2Attention(GPT2Attention):
         value = einops.rearrange(value, 'b h m k -> b m h k')
 
         drop_rate = self.attn_dropout.p
-        output = xops.memory_efficient_attention(query, key, value, p=drop_rate, attn_bias=xops.LowerTriangularMask())
+        output = lower_triangular_attention(query, key, value, p=drop_rate)
 
         ret = einops.rearrange(output, 'b m h k -> b h m k')
 
@@ -32,7 +33,7 @@ class XGPT2Model(GPT2Model):
     def forward(self, *args, **kwargs):
         assert 'attention_mask' in kwargs, 'please pass attention_mask as a kwarg'
         attn_mask = kwargs.get('attention_mask')
-        assert torch.all(attn_mask == 1), 'only accept no padding mask'
+        # assert torch.all(attn_mask == 1), 'only accept no padding mask'
 
         head_mask = kwargs.get('head_mask', None)
         assert head_mask is None, 'head mask should be None'
