@@ -27,6 +27,8 @@ def train_init(model_name: str, data: dict):
     optimizer = HybridAdam(model.parameters(), lr=1e-3)
 
     model.gradient_checkpointing_enable()
+    model = wrap_attention(model)
+
     sr = optimal_search(model,
                         global_size,
                         unified_dtype=torch.float16,
@@ -35,9 +37,8 @@ def train_init(model_name: str, data: dict):
                         inp=data,
                         step_fn=train_step)
     model = ElixirModule(model, sr, global_group, prefetch=True, dtype=torch.float16, use_fused_kernels=True)
-    optimizer = ElixirOptimizer(model, optimizer, initial_scale=512)
+    optimizer = ElixirOptimizer(model, optimizer, initial_scale=2048)
 
-    model = wrap_attention(model)
     model.train()
 
     def forward(data):
