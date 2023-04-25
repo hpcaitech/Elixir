@@ -21,6 +21,10 @@ def gpt2_10b():
     return GPTLMModel(hidden_size=4096, num_layers=48, num_attention_heads=32)
 
 
+def gpt2_15b():
+    return GPTLMModel(hidden_size=8192, num_layers=18, num_attention_heads=64)
+
+
 def gpt2_20b():
     return GPTLMModel(hidden_size=8192, num_layers=24, num_attention_heads=64)
 
@@ -92,6 +96,8 @@ def get_model(name: str):
         return gpt2_4b()
     elif name == 'gpt2-10b':
         return gpt2_10b()
+    elif name == 'gpt2-15b':
+        return gpt2_15b()
     elif name == 'gpt2-20b':
         return gpt2_20b()
     elif name == 'gpt2-25b':

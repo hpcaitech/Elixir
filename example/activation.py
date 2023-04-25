@@ -1,7 +1,9 @@
+import argparse
 from test.utils.gpt import GPTLMModel, small_data_fn
 from time import time
 
 import torch
+from torch.autograd.profiler_util import _format_memory
 from transformers import AutoConfig, OPTConfig, OPTForCausalLM
 
 from elixir.ctx import MetaContext
@@ -11,9 +13,17 @@ from elixir.utils import get_model_size, model_size_formatter
 from example.common.models import get_model
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='test activation settings')
+    parser.add_argument('--model_name', type=str, default='opt-1b', help='test model name')
+    args = parser.parse_args()
+    return args
+
+
 def profile_max_activation():
+    args = parse_args()
     with MetaContext():
-        model = get_model('opt-175b')
+        model = get_model(args.model_name)
     model_size = get_model_size(model)
     print(f'model size: {model_size_formatter(model_size)}')
 
@@ -35,6 +45,7 @@ def profile_max_activation():
 
     print(f'profile time: {end - start: .2f} sec')
     print('memory usage', profiling_dict)
+    print('activation', _format_memory(profiling_dict['activation_occ']))
 
 
 if __name__ == '__main__':
