@@ -75,6 +75,7 @@ class ElixirModule(nn.Module):
             param.__class__ = HookParam
 
     def __init_chunk_group(self, sr: SearchResult):
+        torch.cuda.empty_cache()
         state_dict = self.module.state_dict(keep_vars=True)
         for name, tensor in state_dict.items():
             if isinstance(tensor, nn.Parameter):
