@@ -77,18 +77,8 @@ class Chunk:
         self.shard_end: int = self.shard_begin + self.shard_size
         self.valid_end: int = self.shard_size + 1    # set to an illegal number
 
-        # configure the init device of the shard
-        # no-offload default: fp16, fp32 -> CUDA
-        # offload default: fp16, fp32 -> CPU
-        shard_device: torch.device = shard_device or torch.device('cpu')
-        pin_flag: bool = cpu_pin_memory and shard_device.type == 'cpu'
-        # chunk.shard is a local chunk
-        # it is desinged to exist permanently
-        self.shard: torch.Tensor = torch.empty(self.shard_size,
-                                               dtype=chunk_dtype,
-                                               device=shard_device,
-                                               pin_memory=pin_flag)
-
+        # notice: release blocks reserved by Pytorch
+        torch.cuda.empty_cache()
         # rcache block, the global replicated chunk in R cache
         self.rcb: Optional[TensorBlock] = None
         self.rcache_fused: bool = rcache_fused
@@ -107,6 +97,18 @@ class Chunk:
             torch.zero_(self.chunk_temp)
         else:
             self.chunk_temp = torch.zeros(chunk_size, dtype=chunk_dtype, device=temp_device)
+
+        # configure the init device of the shard
+        # no-offload default: fp16, fp32 -> CUDA
+        # offload default: fp16, fp32 -> CPU
+        shard_device: torch.device = shard_device or torch.device('cpu')
+        pin_flag: bool = cpu_pin_memory and shard_device.type == 'cpu'
+        # chunk.shard is a local chunk
+        # it is desinged to exist permanently
+        self.shard: torch.Tensor = torch.empty(self.shard_size,
+                                               dtype=chunk_dtype,
+                                               device=shard_device,
+                                               pin_memory=pin_flag)
 
         # calculate the memory occupation of the chunk and the shard
         self.chunk_memo: int = self.chunk_size * self.chunk_temp.element_size()

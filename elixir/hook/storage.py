@@ -8,13 +8,16 @@ class BufferStore(object):
     """A place to store parameters temporarily when computing.
     """
 
-    def __init__(self, buffer_size: torch.Tensor, buffer_dtype: torch.dtype) -> None:
+    def __init__(self, buffer_size: torch.Tensor, buffer_dtype: torch.dtype, device_str: str = 'cuda') -> None:
         super().__init__()
         self.buffer_size = buffer_size
         self.buffer_dtype = buffer_dtype
-        self.buffer: torch.Tensor = torch.empty(buffer_size, dtype=buffer_dtype, device=gpu_device())
+        self.buffer: torch.Tensor = torch.empty(buffer_size, dtype=buffer_dtype, device=device_str)
         self.buffer_occ = buffer_size * self.buffer.element_size()
         self.record_dict = dict()
+
+    def zeros(self):
+        torch.zero_(self.buffer)
 
     def insert(self, t: torch.Tensor, offset: int) -> int:
         assert t not in self.record_dict
@@ -39,6 +42,9 @@ class BufferStore(object):
 
     def empty_like(self, t: torch.Tensor):
         return self.buffer[:t.numel()].view(t.shape)
+
+    def empty_1d(self, size: int):
+        return self.buffer[:size]
 
     def __repr__(self) -> str:
         return f'Buffer(size={self.buffer_size}, dtype={self.buffer_dtype}, memo_occ={_format_memory(self.buffer_occ)})'

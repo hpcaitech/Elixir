@@ -96,3 +96,24 @@ def calc_buffer_size(m: nn.Module, test_dtype: torch.dtype = torch.float):
             sum_p_size += param.numel()
         max_sum_size = max(max_sum_size, sum_p_size)
     return max_sum_size
+
+
+def calc_block_usage():
+    snap_shot = torch.cuda.memory_snapshot()
+
+    total_sum = 0
+    active_sum = 0
+    for info_dict in snap_shot:
+        blocks = info_dict.get('blocks')
+        for b in blocks:
+            size = b.get('size')
+            state = b.get('state')
+            total_sum += size
+            if state == 'active_allocated':
+                active_sum += size
+
+    active_ratio = 1
+    if total_sum > 0:
+        active_ratio = active_sum / total_sum
+
+    print(f'memory snap shot: active ratio {active_ratio:.2f}')

@@ -12,6 +12,7 @@ from torch.nn import Parameter
 
 from elixir.chunk import Chunk
 from elixir.cuda import gpu_device
+from elixir.hook.storage import BufferStore
 
 from .module import ElixirModule
 
@@ -45,7 +46,8 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
                  hysteresis: int = 2,
                  max_scale: float = 2**24,
                  max_norm: float = 0.0,
-                 norm_type: float = 2.0):
+                 norm_type: float = 2.0,
+                 init_step=False):
 
         super().__init__(optimizer)
         assert isinstance(module, ElixirModule)
@@ -84,6 +86,31 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
         self._comm_buffer: torch.Tensor = torch.zeros(1, dtype=torch.float, device=gpu_device())
         self._logger = get_dist_logger()
 
+        if init_step:
+            # allocate memory before training
+            self.__zero_step()
+
+    def __zero_step(self):
+        torch.cuda.empty_cache()
+
+        cpu_buffer = BufferStore(self.module.buffer.buffer_size, self.module.buffer.buffer_dtype, 'cpu')
+        buffer_dict = dict(cpu=cpu_buffer, cuda=self.module.buffer)
+        for _, zero_buffer in buffer_dict.items():
+            zero_buffer.zeros()
+
+        for group in self.param_groups:
+            for fake_param in group['params']:
+                optim_chunk = self.param_to_optim_chunk[fake_param]
+                begin, end = self.param_to_range[fake_param]
+
+                fake_param.data = buffer_dict.get(optim_chunk.shard_device.type).empty_1d(end - begin)
+                fake_param.grad = fake_param.data
+                fake_param.data = optim_chunk.shard[begin:end]
+
+        self.optim.step()
+        self.zero_grad()
+        self._update_fp16_params(update_flag=False)
+
     def _set_grad_ptr(self):
         for group in self.param_groups:
             for fake_param in group['params']:
@@ -95,15 +122,16 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
                 fake_param.grad = fake_param.data
                 fake_param.data = optim_chunk.shard[begin:end]
 
-    def _update_fp16_params(self):
+    def _update_fp16_params(self, update_flag: bool = True):
         none_tensor = torch.empty([0])
         for group in self.param_groups:
             for fake_param in group['params']:
                 assert fake_param.grad is None
                 fake_param.data = none_tensor.to(fake_param.device)
 
-        for param_chunk in self.param_chunk_set:
-            param_chunk.optim_update()
+        if update_flag:
+            for param_chunk in self.param_chunk_set:
+                param_chunk.optim_update()
 
     def _check_overflow(self) -> bool:
         # calculate the overflow counter

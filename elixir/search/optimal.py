@@ -33,6 +33,7 @@ class SearchOptimal(SearchBase):
         super().__init__(module, dtype, True, verbose, inp, step_fn)
         # profile cuda memory usage
         memo_usage = cuda_memory_profiling(model=self.meta_module, inp=inp, step_fn=step_fn, dtype=dtype)
+        torch.cuda.empty_cache()
         buffer_occ = memo_usage['buffer_occ']
         # get the maximum memory usage of activation
         predict_activation = memo_usage['activation_occ']
