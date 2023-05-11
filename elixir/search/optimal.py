@@ -24,6 +24,7 @@ class SearchOptimal(SearchBase):
                  default_group_size: int,
                  activation_fragment_factor: float = 1.25,
                  allocation_fragment_factor: float = 0.95,
+                 driver_usage: float = 2 * 1024 ** 3,
                  dtype: torch.dtype = torch.float,
                  verbose: bool = False,
                  overlap: bool = False,
@@ -41,7 +42,7 @@ class SearchOptimal(SearchBase):
         gpu_memory = get_allowed_memory()
         # allowed capacity = allocation_fragment_factor * (total capacity - activation_fragment_factor * activation)
         self.cuda_capacity = int(allocation_fragment_factor *
-                                 (gpu_memory - buffer_occ - activation_fragment_factor * predict_activation))
+                                 (gpu_memory - driver_usage - buffer_occ - activation_fragment_factor * predict_activation))
         hook_buffer_store_size = calc_buffer_size(m=self.meta_module, test_dtype=self.unified_dtype)
         self.cuda_elements = self.cuda_capacity // dtype_to_es.get(dtype) - hook_buffer_store_size
 
