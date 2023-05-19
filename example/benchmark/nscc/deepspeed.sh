@@ -1,7 +1,7 @@
-source /opt/conda/etc/profile.d/conda.sh
-conda activate ds-torch-1.13
+module load miniconda3
+conda activate elx-ds
 
-export T_MODEL=${T_MODEL:-"opt-1b"}
+export T_MODEL=${T_MODEL:-"opt-350m"}
 
 export N_GPU=${N_GPU:-1}
 export N_BS=${N_BS:-16}

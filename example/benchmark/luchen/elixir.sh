@@ -1,9 +1,9 @@
-source /opt/lcsoftware/spack/opt/spack/linux-ubuntu20.04-zen2/gcc-9.3.0/miniconda3-4.10.3-u6p3tgreee7aigtnvuhr44yqo7vcg6r6/etc/profile.d/conda.sh
+source /opt/conda/etc/profile.d/conda.sh
 conda activate adv-torch-1.13
 
-export T_MODEL=${T_MODEL:-"opt-1b"}
+export T_MODEL=${T_MODEL:-"gpt2-20b"}
 
-export N_GPU=${N_GPU:-1}
+export N_GPU=${N_GPU:-4}
 export N_BS=${N_BS:-16}
 export N_STEP=${N_STEP:-6}
 

@@ -63,4 +63,4 @@ def test_optimizer_update(device_type: str = 'cuda', n_times: int = 50):
 if __name__ == '__main__':
     colossalai.launch_from_torch(config={})
     # set_cpu_maximum_parallelism()
-    test_optimizer_update('cpu')
+    test_optimizer_update('cuda')
