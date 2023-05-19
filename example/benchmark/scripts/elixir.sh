@@ -1,4 +1,4 @@
-source /opt/conda/etc/profile.d/conda.sh
+# source /opt/conda/etc/profile.d/conda.sh
 conda activate adv-torch-1.13
 
 export T_MODEL=${T_MODEL:-"gpt2-20b"}
