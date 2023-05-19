@@ -1,4 +1,3 @@
-source /opt/lcsoftware/spack/opt/spack/linux-ubuntu20.04-zen2/gcc-9.3.0/miniconda3-4.10.3-u6p3tgreee7aigtnvuhr44yqo7vcg6r6/etc/profile.d/conda.sh
 conda activate ds-torch-1.13
 
 export T_MODEL=${T_MODEL:-"opt-1b"}
