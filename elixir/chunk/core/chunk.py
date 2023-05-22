@@ -424,13 +424,18 @@ class Chunk:
         return list(self.tensors_info.keys())
 
     def get_cpu_copy(self, only_rank_0: bool = False) -> List[torch.Tensor]:
-        assert not self.is_replica
         assert not self.is_init
-        temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_device())
-        # cheat the assertion in __update_replica
-        self.is_replica = True
-        self.__update_replica(temp_buffer, self.shard)
-        self.is_replica = False
+
+        if self.is_replica:
+            # use the payload directly when being replica
+            temp_buffer = self.rcb.payload
+        else:
+            # otherwise, create a temporary buffer
+            temp_buffer = torch.empty(self.chunk_size, dtype=self.chunk_dtype, device=gpu_device())
+            # cheat the assertion in __update_replica
+            self.is_replica = True
+            self.__update_replica(temp_buffer, self.shard)
+            self.is_replica = False
 
         cpu_copys = [None] * self.num_tensors
         if not only_rank_0 or self.pg_rank == 0:

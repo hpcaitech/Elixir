@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Iterable, List, Optional
 
+import torch
 from sortedcontainers import SortedSet
 
 from elixir.chunk.core import Chunk
@@ -39,7 +40,8 @@ class PrefetchScheduler(ChunkScheduler):
 
     def clear(self) -> None:
         super().clear()
-        assert self.current_step == self.total_steps - 1
+        if torch.is_grad_enabled():
+            assert self.current_step == self.total_steps - 1
         self.chunk_mapping = None
         self.evict_set = None
         self.search_step = -1

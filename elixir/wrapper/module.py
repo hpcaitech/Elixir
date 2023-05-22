@@ -199,7 +199,32 @@ class ElixirModule(nn.Module):
             if hasattr(module, 'inplace'):
                 module.inplace = False
 
+    def _deattach_fetcher(self):
+        self.fetcher.clear()
+        HookParam.release_fetcher()
+        HookParam.disable_fused_kernel()
+
+    def _release_for_inference(self):
+        torch.cuda.synchronize()
+
+        scheduler = self.fetcher.scheduler
+        param_group = self.param_chunk_group
+        while True:
+            maybe_chunk = scheduler.top()
+            if maybe_chunk is None:
+                break
+            scheduler.remove(maybe_chunk)
+            param_group.release_chunk(maybe_chunk)
+        self._deattach_fetcher()
+
     def forward(self, *args, **kwargs):
+        if torch.is_grad_enabled():
+            inference_mode = False
+        else:
+            inference_mode = True
+
+        # reset the fetcher in this step
+        self.fetcher.reset()
         HookParam.attach_fetcher(self.fetcher, self.buffer)
         if self.use_fused_kernels:
             HookParam.enable_fused_kernel()
@@ -218,19 +243,17 @@ class ElixirModule(nn.Module):
         if self.output_fp32:
             outputs = outputs.float()
 
+        if inference_mode:
+            self._release_for_inference()
+
         return outputs
 
     def backward(self, loss: torch.Tensor):
         loss.backward()
-
-        self.fetcher.clear()
-        HookParam.release_fetcher()
-        HookParam.disable_fused_kernel()
-
+        # reset the fetcher for the next step
+        self._deattach_fetcher()
         # reset all attributes
         self.module.zero_grad(set_to_none=True)
-        # reset the fetcher for the next step
-        self.fetcher.reset()
 
     def state_dict(self,
                    destination=None,
