@@ -9,7 +9,6 @@ import torch
 import torch.distributed as dist
 from colossalai.logging import disable_existing_loggers, get_dist_logger
 from colossalai.nn import LinearWarmupLR
-from colossalai.nn.optimizer import HybridAdam
 from data_module import GLUEDataModule
 from func_module import evaluate, get_mem_info, get_tflops, seed_all, train
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -74,11 +73,10 @@ if __name__ == '__main__':
     ]
 
     optimizer = torch.optim.Adam(optimizer_grouped_parameters, lr=args.lr, eps=1e-8)
-    # optimizer = HybridAdam(optimizer_grouped_parameters, lr=args.lr, eps=1e-8)
 
     sr = minimum_waste_search(model, world_size, torch.float32, verbose=True)
     model = ElixirModule(model, sr, world_group, dtype=torch.float32, use_fused_kernels=True)
-    optimizer = ElixirOptimizer(model, optimizer, init_step=True)    #, initial_scale=64)
+    optimizer = ElixirOptimizer(model, optimizer, init_step=True)
 
     logger.info('Dataloder is creating now.', ranks=[0])
     train_loader, train_sampler = dm.train_loader_and_sampler()
