@@ -37,6 +37,8 @@ class ChunkFetcher(object):
     def clear(self):
         if self.overlap_flag:
             torch.cuda.synchronize()
+            self.predict_next_chunk = None
+            self.is_fetching = False
             if self.reduced_chunk is not None:
                 self.reduce_call_back()
                 self.reduced_chunk = None

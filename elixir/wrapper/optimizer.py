@@ -51,8 +51,9 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
 
         super().__init__(optimizer)
         assert isinstance(module, ElixirModule)
-        assert type(optimizer) in _AVAIL_OPTIM_LIST, 'You should use an optimizer in the available list:\n' \
-            f'{_AVAIL_OPTIM_LIST}'
+        self.scaled_optimizer = False
+        if type(optimizer) in _AVAIL_OPTIM_LIST:
+            self.scaled_optimizer = True
 
         self.module = module
         self.param_chunk_group = module.param_chunk_group
@@ -207,7 +208,13 @@ class ElixirOptimizer(colo_optim.ColossalaiOptimizer):
         self.grad_scaler.update(found_inf)
         self._clear_optim_states()
 
-        ret = self.optim.step(div_scale=combined_scale, *args, **kwargs)
+        if not self.scaled_optimizer:
+            assert combined_scale == -1, 'You should use an optimizer in the available list:\n' \
+            f'{_AVAIL_OPTIM_LIST}'
+            ret = self.optim.step(*args, **kwargs)
+        else:
+            ret = self.optim.step(div_scale=combined_scale, *args, **kwargs)
+
         self.zero_grad()
         self._update_fp16_params()
         return ret

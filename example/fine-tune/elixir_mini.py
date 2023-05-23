@@ -14,11 +14,15 @@ from func_module import evaluate, get_mem_info, get_tflops, seed_all, train
 from torch.nn.parallel import DistributedDataParallel as DDP
 from transformers import AutoConfig, BertForSequenceClassification, get_linear_schedule_with_warmup
 
+from elixir.search import minimum_waste_search
+from elixir.wrapper import ElixirModule, ElixirOptimizer
+
 if __name__ == '__main__':
     disable_existing_loggers()
     colossalai.launch_from_torch(config={})
     logger = get_dist_logger()
     world_size = dist.get_world_size()
+    world_group = dist.GroupMember.WORLD
     local_rank = dist.get_rank()
 
     parser = ArgumentParser()
@@ -55,9 +59,6 @@ if __name__ == '__main__':
     logger.info(f'Model numel: {numel}', ranks=[0])
     logger.info(get_mem_info(), ranks=[0])
 
-    model = model.cuda()
-    model = DDP(model, device_ids=[local_rank])
-
     logger.info('Optimizer is creating now.', ranks=[0])
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -72,6 +73,10 @@ if __name__ == '__main__':
     ]
 
     optimizer = torch.optim.Adam(optimizer_grouped_parameters, lr=args.lr, eps=1e-8)
+
+    sr = minimum_waste_search(model, world_size, torch.float32, verbose=True)
+    model = ElixirModule(model, sr, world_group, dtype=torch.float32, use_fused_kernels=True)
+    optimizer = ElixirOptimizer(model, optimizer, init_step=True)
 
     logger.info('Dataloder is creating now.', ranks=[0])
     train_loader, train_sampler = dm.train_loader_and_sampler()
@@ -95,6 +100,7 @@ if __name__ == '__main__':
               loader=train_loader,
               optimizer=optimizer,
               lr_scheduler=lr_scheduler,
-              show_progress=local_rank == 0)
+              show_progress=local_rank == 0,
+              optimizer_backward=True)
         percentage, f1 = evaluate(model=model, metric=metric, loader=valid_loader, show_progress=local_rank == 0)
         logger.info('valid correct percentage: {:.4f}\nf1: {:.4f}'.format(percentage, f1), ranks=[0])
