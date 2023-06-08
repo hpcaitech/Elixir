@@ -32,7 +32,7 @@ You can try it by yourself with the folder `activation` in the directory `exampl
 ### Hardware Performance Profiling
 
 See the folder `profile`.
-You can profile the aggregate bandwidth of GPU-CPU communications and the aggreagte velocity of Adam optimizers.
+You can profile the aggregate bandwidth of GPU-CPU communications and the aggregate velocity of Adam optimizers.
 
 ## Examples
 
@@ -50,7 +50,7 @@ model = ElixirModule(model, sr, world_group)
 optimizer = ElixirOptimizer(model, optimizer)
 ```
 
-Here is an advanced example for performance, which is used in our [benchmarkhere](https://github.com/hpcaitech/Elixir/blob/main/example/common/elx.py).
+Here is an advanced example for performance, which is used in our [benchmark here](https://github.com/hpcaitech/Elixir/blob/main/example/common/elx.py).
 
 ```python
 import torch
@@ -74,7 +74,7 @@ sr = optimal_search(
     unified_dtype=torch.float16,  # enable for FP16 training
     overlap=True,  # enable for overlapping communications
     verbose=True,  # print detailed processing information
-    inp=data,  # proivde an example input data in dictionary format
+    inp=data,  # provide an example input data in dictionary format
     step_fn=train_step  # provide an example step function
 )
 model = ElixirModule(
